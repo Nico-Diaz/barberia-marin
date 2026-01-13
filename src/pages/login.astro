@@ -1,0 +1,104 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+let error = false;
+
+// Si el usuario ya está logueado, lo mandamos directo al admin
+if (Astro.cookies.has('admin_access')) {
+    return Astro.redirect('/admin');
+}
+
+// Lógica cuando se envía el formulario
+if (Astro.request.method === 'POST') {
+    const data = await Astro.request.formData();
+    const password = data.get('password');
+
+    // Verificamos contra la variable de entorno
+    if (password === import.meta.env.ADMIN_PASSWORD) {
+        // Contraseña correcta: Creamos la cookie
+        Astro.cookies.set('admin_access', 'true', {
+            path: '/',
+            maxAge: 60 * 60 * 24 * 7, // Dura 7 días
+        });
+        return Astro.redirect('/admin');
+    } else {
+        error = true;
+    }
+}
+---
+
+<Layout title="Acceso Administrativo">
+    <div class="login-container">
+        <div class="login-box">
+            <h2>Acceso Privado</h2>
+            <p>Ingresa la contraseña maestra para gestionar los turnos.</p>
+
+            <form method="POST">
+                <input type="password" name="password" placeholder="Contraseña..." required autofocus />
+                
+                {error && <p class="error-msg">Contraseña incorrecta. Intenta de nuevo.</p>}
+                
+                <button type="submit" class="btn">Entrar</button>
+            </form>
+
+            <a href="/" class="back-link">← Volver al inicio</a>
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .login-container {
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: var(--color-bg-beige);
+    }
+
+    .login-box {
+        background: white;
+        padding: 50px;
+        border: 1px solid #ddd;
+        text-align: center;
+        max-width: 400px;
+        width: 90%;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+    }
+
+    h2 {
+        margin-bottom: 10px;
+        font-size: 2rem;
+    }
+
+    p {
+        margin-bottom: 30px;
+        font-size: 0.9rem;
+        color: #666;
+    }
+
+    input {
+        width: 100%;
+        padding: 15px;
+        margin-bottom: 15px;
+        border: 1px solid #ccc;
+        font-size: 1rem;
+    }
+
+    .btn {
+        width: 100%;
+        cursor: pointer;
+    }
+
+    .error-msg {
+        color: red;
+        font-size: 0.9rem;
+        margin-bottom: 15px;
+    }
+
+    .back-link {
+        display: block;
+        margin-top: 20px;
+        font-size: 0.8rem;
+        color: #888;
+    }
+</style>

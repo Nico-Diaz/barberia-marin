@@ -1,0 +1,170 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { db, Turnos, eq, desc } from 'astro:db';
+
+// --- NUEVO: SEGURIDAD ---
+// 1. Verificar si tiene permiso. Si no, ¡afuera!
+if (!Astro.cookies.has('admin_access')) {
+    return Astro.redirect('/login');
+}
+
+// 2. Lógica de Logout (si presiona el botón de salir)
+if (Astro.request.method === 'POST') {
+    const formData = await Astro.request.formData();
+    
+    // Si es acción de logout
+    if (formData.get('action') === 'logout') {
+        Astro.cookies.delete('admin_access', { path: '/' });
+        return Astro.redirect('/login');
+    }
+    
+    // ... aquí sigue la lógica de borrar turnos que ya tenías ...
+    const idToDelete = formData.get('id');
+    if (idToDelete) {
+        await db.delete(Turnos).where(eq(Turnos.id, Number(idToDelete)));
+    }
+}
+// ------------------------
+
+const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
+---
+
+<Layout title="Panel de Administración | Ezequiel Marin">
+    <div class="admin-container">
+        <header class="admin-header">
+            <h1>Panel de Turnos</h1>
+            <a href="/" class="btn-back">← Volver a la Web</a>
+        </header>
+
+        <div class="table-wrapper">
+            {turnos.length === 0 ? (
+                <p class="no-data">No hay turnos registrados todavía.</p>
+            ) : (
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Hora</th>
+                            <th>Cliente</th>
+                            <th>Teléfono</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {turnos.map((turno) => (
+                            <tr>
+                                <td>{turno.fecha}</td>
+                                <td>{turno.hora}</td>
+                                <td class="capitalize">{turno.nombre} {turno.apellido}</td>
+                                <td>
+                                    {turno.telefono ? (
+                                        <a href={`https://wa.me/${turno.telefono}`} target="_blank" class="whatsapp-link">
+                                            {turno.telefono}
+                                        </a>
+                                    ) : '-'}
+                                </td>
+                                <td>
+                                    <form method="POST" onsubmit="return confirm('¿Estás seguro de borrar este turno?');">
+                                        <input type="hidden" name="id" value={turno.id} />
+                                        <button type="submit" class="btn-delete">Eliminar</button>
+                                    </form>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .admin-container {
+        padding: 120px 20px 60px; /* Padding top alto porque el header es absolute */
+        min-height: 100vh;
+        background-color: #fff;
+    }
+
+    .admin-header {
+        max-width: 1000px;
+        margin: 0 auto 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 2px solid var(--color-bg-beige);
+        padding-bottom: 20px;
+    }
+
+    h1 {
+        font-size: 2rem;
+        color: var(--color-text-black);
+    }
+
+    .btn-back {
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    /* Tabla */
+    .table-wrapper {
+        max-width: 1000px;
+        margin: auto;
+        overflow-x: auto; /* Para que haga scroll en celular */
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--font-body);
+    }
+
+    th {
+        text-align: left;
+        padding: 15px;
+        background-color: var(--color-text-black);
+        color: var(--color-bg-beige);
+        font-family: var(--font-titles);
+        font-weight: 400;
+        letter-spacing: 1px;
+    }
+
+    td {
+        padding: 15px;
+        border-bottom: 1px solid #eee;
+        color: #333;
+    }
+
+    tr:hover td {
+        background-color: #fafafa;
+    }
+
+    .capitalize {
+        text-transform: capitalize;
+    }
+
+    .whatsapp-link {
+        color: green;
+        font-weight: 600;
+    }
+
+    .btn-delete {
+        background-color: #ff4d4d;
+        color: white;
+        border: none;
+        padding: 5px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.8rem;
+    }
+
+    .btn-delete:hover {
+        background-color: #cc0000;
+    }
+
+    .no-data {
+        text-align: center;
+        color: #777;
+        font-size: 1.2rem;
+        margin-top: 50px;
+    }
+</style>
