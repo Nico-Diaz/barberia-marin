@@ -1,6 +1,9 @@
 ---
 // Lógica del Servidor (Backend)
-import { db, Turnos } from 'astro:db';
+import { db, Turnos, eq, and } from 'astro:db';
+
+let mensaje = "";
+let tipoMensaje = ""; // 'exito' o 'error'
 
 // Si el método es POST (alguien envió el formulario)
 if (Astro.request.method === 'POST') {
@@ -12,19 +15,36 @@ if (Astro.request.method === 'POST') {
   const hora = formData.get('hora') as string;
   const telefono = formData.get('telefono') as string;
 
-  // 2. Insertar en la Base de Datos
   try {
-    await db.insert(Turnos).values({
-      nombre,
-      apellido,
-      fecha,
-      hora,
-      telefono
-    });
-    console.log("Turno guardado con éxito");
-    // Aquí podríamos redirigir a una página de "Gracias"
+    // 2. VERIFICACIÓN: ¿Ya existe un turno ese día a esa hora?
+    const turnosExistentes = await db.select().from(Turnos).where(
+        and(
+            eq(Turnos.fecha, fecha),
+            eq(Turnos.hora, hora)
+        )
+    );
+
+    if (turnosExistentes.length > 0) {
+        // CASO: OCUPADO
+        mensaje = `Lo sentimos, el horario de las ${hora} para el día ${fecha} ya está ocupado. Por favor elige otro.`;
+        tipoMensaje = "error";
+    } else {
+        // CASO: DISPONIBLE -> Guardamos
+        await db.insert(Turnos).values({
+            nombre,
+            apellido,
+            fecha,
+            hora,
+            telefono
+        });
+        mensaje = "¡Reserva confirmada con éxito! Te esperamos.";
+        tipoMensaje = "exito";
+    }
+
   } catch (error) {
     console.error("Error al guardar turno:", error);
+    mensaje = "Ocurrió un error en el sistema. Intenta nuevamente.";
+    tipoMensaje = "error";
   }
 }
 ---
@@ -35,6 +55,13 @@ if (Astro.request.method === 'POST') {
         <p class="subtitle">La excelencia requiere tiempo. Reserva tu espacio exclusivo.</p>
         
         <div class="booking-container">
+            
+            {mensaje && (
+                <div class={`mensaje-alerta ${tipoMensaje}`}>
+                    {mensaje}
+                </div>
+            )}
+
             <form method="POST" class="booking-form">
                 <div class="form-group">
                     <input type="text" name="nombre" placeholder="Nombre" required>
@@ -46,18 +73,28 @@ if (Astro.request.method === 'POST') {
                 </div>
 
                 <div class="form-group">
-                    <input type="date" name="fecha" required>
-                    <select name="hora" required>
-                        <option value="" disabled selected>Selecciona una hora</option>
-                        <option value="10:00">10:00</option>
-                        <option value="11:00">11:00</option>
-                        <option value="12:00">12:00</option>
-                        <option value="15:00">15:00</option>
-                        <option value="16:00">16:00</option>
-                        <option value="17:00">17:00</option>
-                        <option value="18:00">18:00</option>
-                        <option value="19:00">19:00</option>
-                    </select>
+                    <label class="fecha-label">
+                        <span>Selecciona el día:</span>
+                        <input type="date" name="fecha" required min={new Date().toISOString().split('T')[0]}>
+                    </label>
+                    
+                    <label class="hora-label">
+                        <span>Selecciona la hora:</span>
+                        <select name="hora" required>
+                            <option value="" disabled selected>Hora...</option>
+                            <option value="10:00">10:00</option>
+                            <option value="11:00">11:00</option>
+                            <option value="12:00">12:00</option>
+                            <option value="13:00">13:00</option>
+                            <option value="14:00">14:00</option>
+                            <option value="15:00">15:00</option>
+                            <option value="16:00">16:00</option>
+                            <option value="17:00">17:00</option>
+                            <option value="18:00">18:00</option>
+                            <option value="19:00">19:00</option>
+                            <option value="20:00">20:00</option>
+                        </select>
+                    </label>
                 </div>
 
                 <button type="submit" class="btn btn-submit">CONFIRMAR RESERVA</button>
@@ -94,10 +131,42 @@ if (Astro.request.method === 'POST') {
         border: 1px solid rgba(242, 240, 230, 0.1);
     }
 
+    /* Estilos de los mensajes */
+    .mensaje-alerta {
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 4px;
+        font-weight: 600;
+    }
+    .mensaje-alerta.exito {
+        background-color: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+    .mensaje-alerta.error {
+        background-color: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
     .form-group {
         display: flex;
         gap: 15px;
         margin-bottom: 20px;
+    }
+
+    /* Etiquetas para mejorar la UX de fecha/hora */
+    .fecha-label, .hora-label {
+        display: flex;
+        flex-direction: column;
+        text-align: left;
+        width: 100%;
+        color: rgba(242, 240, 230, 0.8);
+        font-size: 0.9rem;
+    }
+    .fecha-label span, .hora-label span {
+        margin-bottom: 5px;
+        margin-left: 2px;
     }
 
     /* Input Styles */

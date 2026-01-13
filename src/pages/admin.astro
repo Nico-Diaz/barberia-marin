@@ -2,8 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import { db, Turnos, eq, desc } from 'astro:db';
 
-// --- NUEVO: SEGURIDAD ---
-// 1. Verificar si tiene permiso. Si no, ¡afuera!
+// 1. Verificar si tiene permiso.
 if (!Astro.cookies.has('admin_access')) {
     return Astro.redirect('/login');
 }
@@ -24,7 +23,6 @@ if (Astro.request.method === 'POST') {
         await db.delete(Turnos).where(eq(Turnos.id, Number(idToDelete)));
     }
 }
-// ------------------------
 
 const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
 ---
