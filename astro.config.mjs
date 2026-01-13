@@ -1,12 +1,9 @@
 import { defineConfig } from 'astro/config';
 import db from '@astrojs/db';
-
-import vercel from '@astrojs/vercel';
+import vercel from '@astrojs/vercel/serverless'; // <--- OJO AQUÍ
 
 export default defineConfig({
-  // <--- AGREGA ESTA LÍNEA IMPORTANTE
   output: 'server',
-
-  integrations: [db()],
-  adapter: vercel()
+  adapter: vercel(), 
+  integrations: [db()]
 });
