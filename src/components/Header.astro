@@ -11,8 +11,7 @@ const { title } = Astro.props;
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="description" content="Barbería Privada de Ezequiel Marin" />
-		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" /> <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="preconnect" href="https://fonts.googleapis.com">
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 		<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Oswald:wght@700&display=swap" rel="stylesheet">
@@ -24,15 +23,13 @@ const { title } = Astro.props;
 </html>
 
 <style is:global>
-	/* --- Variables CSS Globales --- */
 	:root {
-		--color-bg-beige: #F2F0E6;       /* Beige elegante */
-		--color-text-black: #1A1A1A;     /* Negro intenso */
+		--color-bg-beige: #F2F0E6;
+		--color-text-black: #1A1A1A;
 		--font-titles: 'Oswald', sans-serif;
 		--font-body: 'Montserrat', sans-serif;
 	}
 
-	/* --- Reset y Estilos Base --- */
 	* {
 		margin: 0;
 		padding: 0;
@@ -49,6 +46,7 @@ const { title } = Astro.props;
 		font-family: var(--font-body);
 		line-height: 1.6;
 		overflow-x: hidden;
+		font-size: 16px; /* Base */
 	}
 
 	h1, h2, h3, h4 {
@@ -64,18 +62,17 @@ const { title } = Astro.props;
 		transition: 0.3s;
 	}
 
-	/* Utilidad para contenedores */
 	.container {
 		width: 90%;
 		max-width: 1200px;
 		margin: auto;
 	}
 
+	/* Padding adaptable: 80px en PC, 50px en móvil */
 	.section-padding {
 		padding: 80px 0;
 	}
 
-	/* Botón Global */
 	.btn {
 		display: inline-block;
 		padding: 15px 35px;
@@ -93,5 +90,18 @@ const { title } = Astro.props;
 	.btn:hover {
 		background-color: transparent;
 		color: var(--color-text-black);
+	}
+
+	/* --- MEDIA QUERIES GLOBALES (Móvil) --- */
+	@media (max-width: 768px) {
+		body {
+			font-size: 15px;
+		}
+		.section-padding {
+			padding: 50px 0; /* Menos espacio en vertical */
+		}
+		h2 {
+			font-size: 2rem !important; /* Títulos más chicos */
+		}
 	}
 </style>
