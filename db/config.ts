@@ -2,7 +2,7 @@ import { defineDb, defineTable, column } from 'astro:db';
 
 const Turnos = defineTable({
   columns: {
-    id: column.number({ primaryKey: true }),
+    id: column.number({ primaryKey: true, autoIncrement: true }),
     nombre: column.text(),
     apellido: column.text(),
     telefono: column.text({ optional: true }),

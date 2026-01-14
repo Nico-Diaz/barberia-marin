@@ -1,0 +1,101 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+// 1. Recibimos los datos por la URL para personalizar el mensaje
+const url = new URL(Astro.request.url);
+const nombre = url.searchParams.get('nombre') || 'Cliente';
+const fecha = url.searchParams.get('fecha') || '';
+const hora = url.searchParams.get('hora') || '';
+
+// 2. Preparamos el mensaje de WhatsApp
+// Cambia este número por el de Ezequiel (formato internacional sin +)
+const telefonoEzequiel = "5492612461691"; 
+const mensajeWhatsApp = `Hola Eze, soy ${nombre}. Acabo de reservar en la web para el ${fecha} a las ${hora}. ¿Me lo confirmas?`;
+const linkWhatsApp = `https://wa.me/${telefonoEzequiel}?text=${encodeURIComponent(mensajeWhatsApp)}`;
+---
+
+<Layout title="¡Reserva Recibida!">
+    <div class="success-container">
+        <div class="card">
+            <div class="icon">✅</div>
+            <h1>¡Gracias, {nombre}!</h1>
+            <p>Tu turno para el día <strong>{fecha}</strong> a las <strong>{hora}</strong> ha sido registrado.</p>
+            
+            <p class="instruction">Para terminar, por favor confirma tu asistencia enviando este mensaje:</p>
+
+            <a href={linkWhatsApp} class="btn-whatsapp" target="_blank">
+                Confirmar por WhatsApp 💬
+            </a>
+
+            <a href="/" class="btn-back">Volver al inicio</a>
+        </div>
+    </div>
+</Layout>
+
+<style>
+    .success-container {
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background-color: var(--color-bg-beige);
+        text-align: center;
+        padding: 20px;
+    }
+
+    .card {
+        background: white;
+        padding: 40px;
+        border-radius: 8px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        max-width: 500px;
+        width: 100%;
+    }
+
+    .icon {
+        font-size: 4rem;
+        margin-bottom: 20px;
+    }
+
+    h1 {
+        font-size: 2rem;
+        margin-bottom: 15px;
+        color: var(--color-text-black);
+    }
+
+    p {
+        font-size: 1.1rem;
+        color: #555;
+        margin-bottom: 30px;
+    }
+
+    .instruction {
+        font-size: 0.9rem;
+        color: #888;
+        margin-bottom: 20px;
+    }
+
+    .btn-whatsapp {
+        display: block;
+        background-color: #25D366;
+        color: white;
+        padding: 15px;
+        border-radius: 50px;
+        text-decoration: none;
+        font-weight: bold;
+        font-size: 1.1rem;
+        margin-bottom: 20px;
+        transition: transform 0.2s;
+    }
+
+    .btn-whatsapp:hover {
+        transform: scale(1.05);
+        background-color: #1ebc57;
+    }
+
+    .btn-back {
+        color: #888;
+        font-size: 0.9rem;
+        text-decoration: underline;
+    }
+</style>

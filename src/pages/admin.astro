@@ -1,37 +1,52 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { db, Turnos, eq, desc } from 'astro:db';
+import { db, Turnos, eq, asc } from 'astro:db';
 
-// 1. Verificar si tiene permiso.
+// 1. Configuración anti-caché
+export const prerender = false;
+Astro.response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+Astro.response.headers.set('Pragma', 'no-cache');
+Astro.response.headers.set('Expires', '0');
+
+// 2. Seguridad
 if (!Astro.cookies.has('admin_access')) {
     return Astro.redirect('/login');
 }
 
-// 2. Lógica de Logout (si presiona el botón de salir)
+// 3. Lógica del Servidor (POST)
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
-    
-    // Si es acción de logout
+
     if (formData.get('action') === 'logout') {
         Astro.cookies.delete('admin_access', { path: '/' });
         return Astro.redirect('/login');
     }
-    
-    // ... aquí sigue la lógica de borrar turnos que ya tenías ...
+
     const idToDelete = formData.get('id');
     if (idToDelete) {
-        await db.delete(Turnos).where(eq(Turnos.id, Number(idToDelete)));
+        try {
+            await db.delete(Turnos).where(eq(Turnos.id, Number(idToDelete)));
+        } catch (error) {
+            console.error('Error borrando:', error);
+        }
     }
 }
 
-const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
+const turnos = await db.select().from(Turnos).orderBy(asc(Turnos.fecha), asc(Turnos.hora));
+const hoy = new Date().toLocaleDateString('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
 ---
 
 <Layout title="Panel de Administración | Ezequiel Marin">
+    
     <div class="admin-container">
         <header class="admin-header">
             <h1>Panel de Turnos</h1>
-            <a href="/" class="btn-back">← Volver a la Web</a>
+            <div class="header-actions">
+                <form method="POST">
+                    <input type="hidden" name="action" value="logout">
+                    <button type="submit" class="btn-logout">Cerrar Sesión</button>
+                </form>
+            </div>
         </header>
 
         <div class="table-wrapper">
@@ -50,8 +65,11 @@ const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
                     </thead>
                     <tbody>
                         {turnos.map((turno) => (
-                            <tr>
-                                <td>{turno.fecha}</td>
+                            <tr class={turno.fecha === hoy ? "es-hoy" : ""}>
+                                <td>
+                                    {turno.fecha}
+                                    {turno.fecha === hoy && <span class="tag-hoy">HOY</span>}
+                                </td>
                                 <td>{turno.hora}</td>
                                 <td class="capitalize">{turno.nombre} {turno.apellido}</td>
                                 <td>
@@ -62,9 +80,17 @@ const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
                                     ) : '-'}
                                 </td>
                                 <td>
-                                    <form method="POST" onsubmit="return confirm('¿Estás seguro de borrar este turno?');">
+                                    <form method="POST" id={`form-borrar-${turno.id}`} style="margin: 0;">
                                         <input type="hidden" name="id" value={turno.id} />
-                                        <button type="submit" class="btn-delete">Eliminar</button>
+                                        
+                                        <button 
+                                            type="button" 
+                                            class="btn-delete accion-borrar"
+                                            data-id={turno.id}
+                                            data-nombre={`${turno.nombre} ${turno.apellido}`}
+                                        >
+                                            Eliminar
+                                        </button>
                                     </form>
                                 </td>
                             </tr>
@@ -74,95 +100,118 @@ const turnos = await db.select().from(Turnos).orderBy(desc(Turnos.id));
             )}
         </div>
     </div>
+
+    <script>
+        import Swal from 'sweetalert2';
+
+        // Escuchamos clics en toda la página
+        document.addEventListener('click', (e) => {
+            // TypeScript/Astro necesita saber que e.target es un elemento HTML
+            const target = e.target as HTMLElement;
+            
+            // Buscamos si el clic fue en un botón de borrar (o dentro de uno)
+            const boton = target.closest('.accion-borrar');
+            
+            if (boton) {
+                const id = boton.getAttribute('data-id');
+                const nombre = boton.getAttribute('data-nombre');
+                const form = document.getElementById(`form-borrar-${id}`) as HTMLFormElement;
+
+                if (form) {
+                    Swal.fire({
+                        title: '¿Eliminar turno?',
+                        text: `Vas a borrar a ${nombre}.`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#3085d6',
+                        confirmButtonText: 'Sí, eliminar',
+                        cancelButtonText: 'Cancelar'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            form.submit();
+                        }
+                    });
+                }
+            }
+        });
+    </script>
+
+    <style>
+        /* ESTILOS (IGUAL QUE ANTES) */
+        .admin-container {
+            padding: 120px 20px 60px;
+            min-height: 100vh;
+            background-color: #fff;
+        }
+
+        .admin-header {
+            max-width: 1000px;
+            margin: 0 auto 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid var(--color-bg-beige);
+            padding-bottom: 20px;
+        }
+
+        h1 { font-size: 2rem; color: var(--color-text-black); }
+
+        .table-wrapper {
+            max-width: 1000px;
+            margin: auto;
+            overflow-x: auto;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+            border-radius: 8px;
+        }
+
+        table { width: 100%; border-collapse: collapse; font-family: var(--font-body); background-color: white; }
+
+        th {
+            text-align: left; padding: 15px;
+            background-color: var(--color-text-black);
+            color: var(--color-bg-beige);
+            font-family: var(--font-titles);
+            font-weight: 400; letter-spacing: 1px;
+        }
+
+        td { padding: 15px; border-bottom: 1px solid #eee; color: #333; }
+
+        .es-hoy { background-color: #e8f5e9 !important; position: relative; }
+        .es-hoy td:first-child { border-left: 5px solid #2ecc71; font-weight: bold; }
+        .tag-hoy {
+            display: inline-block; background-color: #2ecc71; color: white;
+            font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle;
+        }
+
+        tr:hover td { background-color: #fafafa; }
+        .es-hoy:hover td { background-color: #dcedc8 !important; }
+
+        .capitalize { text-transform: capitalize; }
+        .whatsapp-link { color: green; font-weight: 600; text-decoration: none; }
+
+        .btn-delete {
+            background-color: #ff4d4d;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: background 0.3s;
+            position: relative;
+            z-index: 10;
+        }
+        .btn-delete:hover { background-color: #cc0000; }
+
+        .btn-logout {
+            background: transparent; border: 1px solid var(--color-text-black);
+            padding: 8px 15px; cursor: pointer;
+            font-family: var(--font-titles); text-transform: uppercase;
+            font-size: 0.8rem; transition: 0.3s;
+        }
+        .btn-logout:hover { background: var(--color-text-black); color: white; }
+
+        .no-data { text-align: center; color: #777; font-size: 1.2rem; margin-top: 50px; }
+    </style>
 </Layout>
-
-<style>
-    .admin-container {
-        padding: 120px 20px 60px; /* Padding top alto porque el header es absolute */
-        min-height: 100vh;
-        background-color: #fff;
-    }
-
-    .admin-header {
-        max-width: 1000px;
-        margin: 0 auto 40px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 2px solid var(--color-bg-beige);
-        padding-bottom: 20px;
-    }
-
-    h1 {
-        font-size: 2rem;
-        color: var(--color-text-black);
-    }
-
-    .btn-back {
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-
-    /* Tabla */
-    .table-wrapper {
-        max-width: 1000px;
-        margin: auto;
-        overflow-x: auto; /* Para que haga scroll en celular */
-    }
-
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        font-family: var(--font-body);
-    }
-
-    th {
-        text-align: left;
-        padding: 15px;
-        background-color: var(--color-text-black);
-        color: var(--color-bg-beige);
-        font-family: var(--font-titles);
-        font-weight: 400;
-        letter-spacing: 1px;
-    }
-
-    td {
-        padding: 15px;
-        border-bottom: 1px solid #eee;
-        color: #333;
-    }
-
-    tr:hover td {
-        background-color: #fafafa;
-    }
-
-    .capitalize {
-        text-transform: capitalize;
-    }
-
-    .whatsapp-link {
-        color: green;
-        font-weight: 600;
-    }
-
-    .btn-delete {
-        background-color: #ff4d4d;
-        color: white;
-        border: none;
-        padding: 5px 10px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 0.8rem;
-    }
-
-    .btn-delete:hover {
-        background-color: #cc0000;
-    }
-
-    .no-data {
-        text-align: center;
-        color: #777;
-        font-size: 1.2rem;
-        margin-top: 50px;
-    }
-</style>

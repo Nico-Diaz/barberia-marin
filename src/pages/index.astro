@@ -6,18 +6,73 @@ import About from '../components/About.astro';
 import Services from '../components/Services.astro';
 import BookingSection from '../components/BookingSection.astro';
 import Footer from '../components/Footer.astro';
+
+// --- LÓGICA DE BACKEND (EL CEREBRO) ---
+import { db, Turnos, eq, and } from 'astro:db';
+
+let mensajeError = "";
+
+// Solo ejecutamos esto si alguien apretó el botón "Confirmar Reserva"
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const nombre = formData.get('nombre') as string;
+  const apellido = formData.get('apellido') as string;
+  const fecha = formData.get('fecha') as string;
+  const hora = formData.get('hora') as string;
+  const telefono = formData.get('telefono') as string;
+
+  // Calculamos qué día de la semana es (0=Domingo, 1=Lunes...)
+  // Agregamos 'T00:00:00' para evitar problemas de zona horaria
+  const diaSemana = new Date(fecha + 'T00:00:00').getDay();
+
+  try {
+    // 1. REGLA: La barbería cierra Domingos (0) y Lunes (1)
+    if (diaSemana === 0 || diaSemana === 1) {
+        mensajeError = "La barbería permanece cerrada los Domingos y Lunes. Por favor elige otro día.";
+    } 
+    // 2. REGLA: Verificar si el turno ya está ocupado
+    else {
+        const turnosExistentes = await db.select().from(Turnos).where(
+            and(
+                eq(Turnos.fecha, fecha),
+                eq(Turnos.hora, hora)
+            )
+        );
+
+        if (turnosExistentes.length > 0) {
+            mensajeError = `El horario de las ${hora} del día ${fecha} ya está ocupado.`;
+        } else {
+            // SI TODO ESTÁ BIEN -> GUARDAMOS
+            console.log('[TURNOS] Guardando turno:', { nombre, apellido, fecha, hora, telefono });
+            const resultado = await db.insert(Turnos).values({
+                nombre,
+                apellido,
+                fecha,
+                hora,
+                telefono
+            });
+            console.log('[TURNOS] Resultado insert:', resultado);
+
+            // Y REDIRIGIMOS A LA PÁGINA DE ÉXITO
+            return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
+        }
+    }
+
+  } catch (error) {
+    console.error("Error al guardar turno:", error);
+    mensajeError = "Ocurrió un error en el sistema. Intenta nuevamente.";
+  }
+}
+// --------------------------------------------------------
 ---
 
 <Layout title="Ezequiel Marin | Barbería Privada">
-	
-	<Header title='Encabezado' />
-	
+	<Header title="Encabezado" />
 	<main>
 		<Hero />
 		<About />
-		<BookingSection />
+		<Services />
+        <BookingSection errorBackend={mensajeError} />
 	</main>
-	
 	<Footer />
-
 </Layout>

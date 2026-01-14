@@ -1,52 +1,11 @@
 ---
-// Lógica del Servidor (Backend)
-import { db, Turnos, eq, and } from 'astro:db';
+// Archivo: src/components/BookingSection.astro
 
-let mensaje = "";
-let tipoMensaje = ""; // 'exito' o 'error'
-
-// Si el método es POST (alguien envió el formulario)
-if (Astro.request.method === 'POST') {
-  // 1. Obtener los datos del formulario
-  const formData = await Astro.request.formData();
-  const nombre = formData.get('nombre') as string;
-  const apellido = formData.get('apellido') as string;
-  const fecha = formData.get('fecha') as string;
-  const hora = formData.get('hora') as string;
-  const telefono = formData.get('telefono') as string;
-
-  try {
-    // 2. VERIFICACIÓN: ¿Ya existe un turno ese día a esa hora?
-    const turnosExistentes = await db.select().from(Turnos).where(
-        and(
-            eq(Turnos.fecha, fecha),
-            eq(Turnos.hora, hora)
-        )
-    );
-
-    if (turnosExistentes.length > 0) {
-        // CASO: OCUPADO
-        mensaje = `Lo sentimos, el horario de las ${hora} para el día ${fecha} ya está ocupado. Por favor elige otro.`;
-        tipoMensaje = "error";
-    } else {
-        // CASO: DISPONIBLE -> Guardamos
-        await db.insert(Turnos).values({
-            nombre,
-            apellido,
-            fecha,
-            hora,
-            telefono
-        });
-        mensaje = "¡Reserva confirmada con éxito! Te esperamos.";
-        tipoMensaje = "exito";
-    }
-
-  } catch (error) {
-    console.error("Error al guardar turno:", error);
-    mensaje = "Ocurrió un error en el sistema. Intenta nuevamente.";
-    tipoMensaje = "error";
-  }
+interface Props {
+    errorBackend?: string;
 }
+
+const { errorBackend } = Astro.props;
 ---
 
 <section id="booking" class="booking-section section-padding">
@@ -56,11 +15,13 @@ if (Astro.request.method === 'POST') {
         
         <div class="booking-container">
             
-            {mensaje && (
-                <div class={`mensaje-alerta ${tipoMensaje}`}>
-                    {mensaje}
+            {errorBackend && (
+                <div class="mensaje-alerta error">
+                    ⚠️ {errorBackend}
                 </div>
             )}
+
+            <div id="js-error" class="mensaje-alerta error" style="display: none;"></div>
 
             <form method="POST" class="booking-form">
                 <div class="form-group">
@@ -103,7 +64,41 @@ if (Astro.request.method === 'POST') {
     </div>
 </section>
 
+<script>
+    const dateInput = document.querySelector('input[name="fecha"]') as HTMLInputElement;
+    const errorDiv = document.getElementById('js-error');
+
+    if (dateInput && errorDiv) {
+        dateInput.addEventListener('input', (e) => {
+            const input = e.target as HTMLInputElement;
+            if (!input.value) return;
+            
+            // Creamos la fecha agregando hora para evitar errores de zona horaria
+            const diaSeleccionado = new Date(input.value + 'T00:00:00').getDay();
+
+            // 0 = Domingo, 1 = Lunes
+            if (diaSeleccionado === 0 || diaSeleccionado === 1) {
+                // 1. Borramos la fecha
+                input.value = ''; 
+                
+                // 2. Mostramos el mensaje en el div rojo
+                errorDiv.textContent = '⛔ La barbería permanece cerrada los Domingos y Lunes. Por favor selecciona otro día.';
+                errorDiv.style.display = 'block'; // Lo hacemos visible
+                
+                // (Opcional) Borrar el mensaje después de 5 segundos
+                setTimeout(() => {
+                    errorDiv.style.display = 'none';
+                }, 5000);
+            } else {
+                // Si elige un día válido, ocultamos el error si estaba visible
+                errorDiv.style.display = 'none';
+            }
+        });
+    }
+</script>
+
 <style>
+    /* ... (Mantén los mismos estilos anteriores) ... */
     .booking-section {
         background-color: var(--color-text-black);
         color: var(--color-bg-beige);
@@ -131,22 +126,15 @@ if (Astro.request.method === 'POST') {
         border: 1px solid rgba(242, 240, 230, 0.1);
     }
 
-    /* Estilos de los mensajes */
-    .mensaje-alerta {
-        padding: 15px;
-        margin-bottom: 20px;
-        border-radius: 4px;
-        font-weight: 600;
-    }
-    .mensaje-alerta.exito {
-        background-color: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-    }
     .mensaje-alerta.error {
         background-color: #f8d7da;
         color: #721c24;
         border: 1px solid #f5c6cb;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 4px;
+        font-weight: 600;
+        text-align: left;
     }
 
     .form-group {
@@ -155,7 +143,6 @@ if (Astro.request.method === 'POST') {
         margin-bottom: 20px;
     }
 
-    /* Etiquetas para mejorar la UX de fecha/hora */
     .fecha-label, .hora-label {
         display: flex;
         flex-direction: column;
@@ -169,7 +156,6 @@ if (Astro.request.method === 'POST') {
         margin-left: 2px;
     }
 
-    /* Input Styles */
     input, select {
         width: 100%;
         padding: 15px;
@@ -187,7 +173,6 @@ if (Astro.request.method === 'POST') {
         background-color: rgba(255,255,255, 0.05);
     }
 
-    /* Hack para el calendario en navegadores oscuros */
     input[type="date"] {
         color-scheme: dark;
     }
@@ -204,6 +189,8 @@ if (Astro.request.method === 'POST') {
         color: var(--color-text-black);
         border: none;
         font-weight: 700;
+        cursor: pointer;
+        transition: 0.3s;
     }
 
     .btn-submit:hover {
