@@ -77,10 +77,17 @@ const { errorBackend } = Astro.props;
 
             if (!inputFecha.value) return;
 
-            const fecha = new Date(inputFecha.value + 'T00:00:00');
-            const diaSemana = fecha.getDay();
-
+            // 1. Obtener datos de fecha
+            // Usamos T00:00:00 para asegurar el día correcto
+            const fechaElegida = new Date(inputFecha.value + 'T00:00:00');
+            const diaSemana = fechaElegida.getDay();
             const configDia = horarios[diaSemana];
+
+            // 2. Lógica de "HOY"
+            const ahora = new Date();
+            // Comparamos cadenas YYYY-MM-DD para saber si es el mismo día
+            const esHoy = inputFecha.value === ahora.toISOString().split('T')[0];
+            const horaActual = ahora.getHours();
 
             if (configDia === null) {
                 inputFecha.value = '';
@@ -90,11 +97,28 @@ const { errorBackend } = Astro.props;
                 }
             } else {
                 selectHora.disabled = false;
+                
+                // Generar horas
                 for (let h = configDia.inicio; h <= configDia.fin; h++) {
+                    
+                    // NUEVA LÓGICA: Si es hoy y la hora ya pasó (o es la hora actual), saltar
+                    // Ejemplo: Son las 15:10. No mostramos ni las 14:00 ni las 15:00.
+                    if (esHoy && h <= horaActual) {
+                        continue;
+                    }
+
                     const horaTexto = `${h}:00`;
                     const option = document.createElement('option');
                     option.value = horaTexto;
                     option.textContent = horaTexto;
+                    selectHora.appendChild(option);
+                }
+
+                // Si después de filtrar no quedaron horas disponibles (ej: es Lunes a las 22hs)
+                if (selectHora.options.length === 1) {
+                    const option = document.createElement('option');
+                    option.text = "Ya no hay turnos hoy";
+                    option.disabled = true;
                     selectHora.appendChild(option);
                 }
             }
@@ -103,118 +127,20 @@ const { errorBackend } = Astro.props;
 </script>
 
 <style>
-    /* TARJETA TIPO APP (Lo que te gustaba) */
-    .card-form {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(242, 240, 230, 0.1);
-        padding: 30px;
-        border-radius: 16px;
-        width: 100%;
-        max-width: 450px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-    }
-
-    .mensaje-alerta.error {
-        background-color: #3b1215;
-        color: #ff8a8a;
-        border: 1px solid #63181d;
-        padding: 10px;
-        margin-bottom: 20px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        text-align: center;
-    }
-
-    .row-group {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-    }
-
-    .full-width {
-        width: 100%;
-        margin-bottom: 20px;
-    }
-
-    .field-wrapper {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 8px; /* Espacio entre Label e Input */
-    }
-
-    /* ETIQUETAS (LABELS) FUERA DEL INPUT */
-    label {
-        color: var(--color-bg-beige);
-        font-size: 0.7rem;
-        font-weight: bold;
-        opacity: 0.6;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        margin-left: 5px; /* Pequeña sangría para alinear */
-    }
-
-    /* INPUTS TIPO CAJA */
-    .input-app {
-        width: 100%;
-        padding: 14px 16px;
-        background-color: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(242, 240, 230, 0.15);
-        color: var(--color-bg-beige);
-        font-size: 0.95rem;
-        border-radius: 10px;
-        outline: none;
-        transition: 0.2s ease-in-out;
-        font-family: var(--font-body);
-    }
-
-    .input-app:focus {
-        border-color: var(--color-bg-beige);
-        background-color: rgba(0, 0, 0, 0.5);
-        transform: translateY(-1px);
-    }
-
-    .input-app.centered {
-        text-align: center;
-    }
-
-    /* --- ESTILO DE LOS PLACEHOLDERS --- */
-    /* Aquí está el truco: hacemos que el texto de relleno se vea sutil y diseñado */
-    .input-app::placeholder {
-        color: rgba(242, 240, 230, 0.3); /* Color mucho más suave */
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    /* Ajustes específicos */
+    /* ... (MANTÉN TUS ESTILOS IGUAL QUE ANTES) ... */
+    .card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+    .mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
+    .row-group { display: flex; gap: 15px; margin-bottom: 20px; }
+    .full-width { width: 100%; margin-bottom: 20px; }
+    .field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    label { color: var(--color-bg-beige); font-size: 0.7rem; font-weight: bold; opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
+    .input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: var(--color-bg-beige); font-size: 0.95rem; border-radius: 10px; outline: none; transition: 0.2s ease-in-out; font-family: var(--font-body); }
+    .input-app:focus { border-color: var(--color-bg-beige); background-color: rgba(0, 0, 0, 0.5); transform: translateY(-1px); }
+    .input-app.centered { text-align: center; }
+    .input-app::placeholder { color: rgba(242, 240, 230, 0.3); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
     input[type="date"] { color-scheme: dark; }
     select option { background-color: #222; color: #fff; }
-
-    /* BOTÓN */
-    .btn-app {
-        width: 100%;
-        padding: 18px;
-        margin-top: 10px;
-        background-color: var(--color-bg-beige);
-        color: var(--color-text-black);
-        border: none;
-        border-radius: 50px;
-        font-weight: 800;
-        font-size: 1rem;
-        letter-spacing: 2px;
-        cursor: pointer;
-        transition: transform 0.2s;
-        text-transform: uppercase;
-        box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1);
-    }
-
-    .btn-app:hover {
-        background-color: #fff;
-        transform: scale(1.02);
-    }
-
-    @media (max-width: 480px) {
-        .row-group { flex-direction: column; gap: 20px; }
-    }
+    .btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: var(--color-bg-beige); color: var(--color-text-black); border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1); }
+    .btn-app:hover { background-color: #fff; transform: scale(1.02); }
+    @media (max-width: 480px) { .row-group { flex-direction: column; gap: 20px; } }
 </style>
