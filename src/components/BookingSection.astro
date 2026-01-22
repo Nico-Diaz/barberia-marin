@@ -5,6 +5,9 @@ interface Props {
 const { errorBackend } = Astro.props;
 ---
 
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+
 <div class="card-form">
     
     {errorBackend && (
@@ -37,7 +40,7 @@ const { errorBackend } = Astro.props;
         <div class="row-group">
             <div class="field-wrapper">
                 <label>FECHA</label>
-                <input type="date" name="fecha" id="input-fecha" required min={new Date().toISOString().split('T')[0]} class="input-app centered">
+                <input type="text" name="fecha" id="input-fecha" required placeholder="Selecciona día..." class="input-app centered" readonly>
             </div>
             
             <div class="field-wrapper">
@@ -52,14 +55,12 @@ const { errorBackend } = Astro.props;
     </form>
 </div>
 
-<script>
-    const inputFecha = document.getElementById('input-fecha') as HTMLInputElement;
-    const selectHora = document.getElementById('select-hora') as HTMLSelectElement;
-    const errorDiv = document.getElementById('js-error');
+<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
-    type HorarioConfig = { inicio: number; fin: number } | null;
-    
-    const horarios: Record<number, HorarioConfig> = {
+<script is:inline>
+    // Configuración de Horarios (Igual que antes)
+    const horarios = {
         0: null,                       // Domingo
         1: { inicio: 10, fin: 19 },    // Lunes
         2: { inicio: 10, fin: 20 },    // Martes
@@ -69,65 +70,74 @@ const { errorBackend } = Astro.props;
         6: { inicio: 11, fin: 21 },    // Sábado
     };
 
-    if (inputFecha && selectHora) {
-        inputFecha.addEventListener('input', () => {
-            if (errorDiv) errorDiv.style.display = 'none';
-            selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
-            selectHora.disabled = true;
+    document.addEventListener('DOMContentLoaded', function() {
+        const selectHora = document.getElementById('select-hora');
+        const errorDiv = document.getElementById('js-error');
 
-            if (!inputFecha.value) return;
-
-            // 1. Obtener datos de fecha
-            // Usamos T00:00:00 para asegurar el día correcto
-            const fechaElegida = new Date(inputFecha.value + 'T00:00:00');
-            const diaSemana = fechaElegida.getDay();
-            const configDia = horarios[diaSemana];
-
-            // 2. Lógica de "HOY"
-            const ahora = new Date();
-            // Comparamos cadenas YYYY-MM-DD para saber si es el mismo día
-            const esHoy = inputFecha.value === ahora.toISOString().split('T')[0];
-            const horaActual = ahora.getHours();
-
-            if (configDia === null) {
-                inputFecha.value = '';
-                if (errorDiv) {
-                    errorDiv.textContent = '⛔ Domingos cerrado.';
-                    errorDiv.style.display = 'block';
+        // INICIALIZAMOS FLATPICKR
+        flatpickr("#input-fecha", {
+            locale: "es",           // Idioma español
+            minDate: "today",       // No permitir pasado
+            dateFormat: "Y-m-d",    // Formato para la base de datos
+            disableMobile: "true",  // Forzar nuestro diseño en celular (no usar el nativo)
+            
+            // FUNCIÓN MÁGICA: Deshabilitar Domingos (0) directamente en el calendario
+            disable: [
+                function(date) {
+                    // return true to disable
+                    return (date.getDay() === 0);
                 }
-            } else {
-                selectHora.disabled = false;
-                
-                // Generar horas
-                for (let h = configDia.inicio; h <= configDia.fin; h++) {
+            ],
+
+            // CUANDO EL USUARIO ELIGE UNA FECHA
+            onChange: function(selectedDates, dateStr, instance) {
+                if (errorDiv) errorDiv.style.display = 'none';
+                selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
+                selectHora.disabled = true;
+
+                if (selectedDates.length === 0) return;
+
+                const fechaElegida = selectedDates[0];
+                const diaSemana = fechaElegida.getDay();
+                const configDia = horarios[diaSemana];
+
+                // Lógica de "HOY"
+                const ahora = new Date();
+                // Verificamos si la fecha elegida es el mismo día que hoy
+                const esHoy = fechaElegida.toDateString() === ahora.toDateString();
+                const horaActual = ahora.getHours();
+
+                if (configDia) {
+                    selectHora.disabled = false;
                     
-                    // NUEVA LÓGICA: Si es hoy y la hora ya pasó (o es la hora actual), saltar
-                    // Ejemplo: Son las 15:10. No mostramos ni las 14:00 ni las 15:00.
-                    if (esHoy && h <= horaActual) {
-                        continue;
+                    for (let h = configDia.inicio; h <= configDia.fin; h++) {
+                        // Si es hoy y la hora ya pasó, la saltamos
+                        if (esHoy && h <= horaActual) {
+                            continue;
+                        }
+
+                        const horaTexto = `${h}:00`;
+                        const option = document.createElement('option');
+                        option.value = horaTexto;
+                        option.textContent = horaTexto;
+                        selectHora.appendChild(option);
                     }
 
-                    const horaTexto = `${h}:00`;
-                    const option = document.createElement('option');
-                    option.value = horaTexto;
-                    option.textContent = horaTexto;
-                    selectHora.appendChild(option);
-                }
-
-                // Si después de filtrar no quedaron horas disponibles (ej: es Lunes a las 22hs)
-                if (selectHora.options.length === 1) {
-                    const option = document.createElement('option');
-                    option.text = "Ya no hay turnos hoy";
-                    option.disabled = true;
-                    selectHora.appendChild(option);
+                    // Si no quedaron horas
+                    if (selectHora.options.length === 1) {
+                        const option = document.createElement('option');
+                        option.text = "Sin cupo hoy";
+                        option.disabled = true;
+                        selectHora.appendChild(option);
+                    }
                 }
             }
         });
-    }
+    });
 </script>
 
 <style>
-    /* ... (MANTÉN TUS ESTILOS IGUAL QUE ANTES) ... */
+    /* ... (TUS ESTILOS DE LA APP SE QUEDAN IGUAL) ... */
     .card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
     .mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
     .row-group { display: flex; gap: 15px; margin-bottom: 20px; }
@@ -138,9 +148,60 @@ const { errorBackend } = Astro.props;
     .input-app:focus { border-color: var(--color-bg-beige); background-color: rgba(0, 0, 0, 0.5); transform: translateY(-1px); }
     .input-app.centered { text-align: center; }
     .input-app::placeholder { color: rgba(242, 240, 230, 0.3); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
-    input[type="date"] { color-scheme: dark; }
     select option { background-color: #222; color: #fff; }
     .btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: var(--color-bg-beige); color: var(--color-text-black); border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1); }
     .btn-app:hover { background-color: #fff; transform: scale(1.02); }
     @media (max-width: 480px) { .row-group { flex-direction: column; gap: 20px; } }
+
+    /* --- ESTILOS PERSONALIZADOS DEL CALENDARIO (FLATPICKR) --- */
+    /* Esto sobreescribe los colores para que coincida con tu marca */
+    
+    :global(.flatpickr-calendar) {
+        background: #1a1a1a !important; /* Fondo negro */
+        border: 1px solid rgba(242, 240, 230, 0.2) !important;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important;
+    }
+
+    /* Encabezado del mes */
+    :global(.flatpickr-months .flatpickr-month) {
+        background: #1a1a1a !important;
+        color: var(--color-bg-beige) !important;
+        fill: var(--color-bg-beige) !important;
+    }
+    :global(.flatpickr-current-month .flatpickr-monthDropdown-months) {
+        background: #1a1a1a !important;
+    }
+    :global(.flatpickr-weekdays) {
+        background: #1a1a1a !important;
+    }
+    :global(span.flatpickr-weekday) {
+        color: rgba(242, 240, 230, 0.6) !important;
+    }
+
+    /* Días */
+    :global(.flatpickr-day) {
+        color: var(--color-bg-beige) !important;
+    }
+    :global(.flatpickr-day:hover) {
+        background: rgba(242, 240, 230, 0.2) !important;
+        border-color: transparent !important;
+    }
+
+    /* Día seleccionado */
+    :global(.flatpickr-day.selected), :global(.flatpickr-day.startRange), :global(.flatpickr-day.endRange), :global(.flatpickr-day.selected.inRange), :global(.flatpickr-day.startRange.inRange), :global(.flatpickr-day.endRange.inRange), :global(.flatpickr-day.selected:focus), :global(.flatpickr-day.startRange:focus), :global(.flatpickr-day.endRange:focus), :global(.flatpickr-day.selected:hover), :global(.flatpickr-day.startRange:hover), :global(.flatpickr-day.endRange:hover), :global(.flatpickr-day.selected.prevMonthDay), :global(.flatpickr-day.startRange.prevMonthDay), :global(.flatpickr-day.endRange.prevMonthDay), :global(.flatpickr-day.selected.nextMonthDay), :global(.flatpickr-day.startRange.nextMonthDay), :global(.flatpickr-day.endRange.nextMonthDay) {
+        background: var(--color-bg-beige) !important;
+        color: var(--color-text-black) !important;
+        border-color: var(--color-bg-beige) !important;
+        font-weight: bold;
+    }
+
+    /* Días deshabilitados (Domingos) */
+    :global(.flatpickr-day.flatpickr-disabled), :global(.flatpickr-day.flatpickr-disabled:hover) {
+        color: rgba(255, 255, 255, 0.1) !important;
+    }
+
+    /* Flechas de navegación */
+    :global(.flatpickr-prev-month svg), :global(.flatpickr-next-month svg) {
+        fill: var(--color-bg-beige) !important;
+    }
 </style>
