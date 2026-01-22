@@ -1,207 +1,220 @@
 ---
-// Archivo: src/components/BookingSection.astro
-
 interface Props {
     errorBackend?: string;
 }
-
 const { errorBackend } = Astro.props;
 ---
 
-<section id="booking" class="booking-section section-padding">
-    <div class="container">
-        <h2>AGENDA TU TURNO</h2>
-        <p class="subtitle">La excelencia requiere tiempo. Reserva tu espacio exclusivo.</p>
-        
-        <div class="booking-container">
-            
-            {errorBackend && (
-                <div class="mensaje-alerta error">
-                    ⚠️ {errorBackend}
-                </div>
-            )}
-
-            <div id="js-error" class="mensaje-alerta error" style="display: none;"></div>
-
-            <form method="POST" class="booking-form">
-                <div class="form-group">
-                    <input type="text" name="nombre" placeholder="Nombre" required>
-                    <input type="text" name="apellido" placeholder="Apellido" required>
-                </div>
-                
-                <div class="form-group">
-                    <input type="tel" name="telefono" placeholder="Teléfono / WhatsApp">
-                </div>
-
-                <div class="form-group">
-                    <label class="fecha-label">
-                        <span>Selecciona el día:</span>
-                        <input type="date" name="fecha" required min={new Date().toISOString().split('T')[0]}>
-                    </label>
-                    
-                    <label class="hora-label">
-                        <span>Selecciona la hora:</span>
-                        <select name="hora" required>
-                            <option value="" disabled selected>Hora...</option>
-                            <option value="10:00">10:00</option>
-                            <option value="11:00">11:00</option>
-                            <option value="12:00">12:00</option>
-                            <option value="13:00">13:00</option>
-                            <option value="14:00">14:00</option>
-                            <option value="15:00">15:00</option>
-                            <option value="16:00">16:00</option>
-                            <option value="17:00">17:00</option>
-                            <option value="18:00">18:00</option>
-                            <option value="19:00">19:00</option>
-                            <option value="20:00">20:00</option>
-                        </select>
-                    </label>
-                </div>
-
-                <button type="submit" class="btn btn-submit">CONFIRMAR RESERVA</button>
-            </form>
+<div class="card-form">
+    
+    {errorBackend && (
+        <div class="mensaje-alerta error">
+            ⚠️ {errorBackend}
         </div>
-    </div>
-</section>
+    )}
+
+    <div id="js-error" class="mensaje-alerta error" style="display: none;"></div>
+
+    <form method="POST" class="booking-form">
+        
+        <div class="row-group">
+            <div class="field-wrapper">
+                <label>NOMBRE</label>
+                <input type="text" name="nombre" placeholder="Tu nombre..." required class="input-app">
+            </div>
+            
+            <div class="field-wrapper">
+                <label>APELLIDO</label>
+                <input type="text" name="apellido" placeholder="Tu apellido..." required class="input-app">
+            </div>
+        </div>
+        
+        <div class="field-wrapper full-width">
+            <label>WHATSAPP (Opcional)</label>
+            <input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app">
+        </div>
+
+        <div class="row-group">
+            <div class="field-wrapper">
+                <label>FECHA</label>
+                <input type="date" name="fecha" id="input-fecha" required min={new Date().toISOString().split('T')[0]} class="input-app centered">
+            </div>
+            
+            <div class="field-wrapper">
+                <label>HORA</label>
+                <select name="hora" id="select-hora" required disabled class="input-app centered">
+                    <option value="" disabled selected>--:--</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-app">CONFIRMAR TURNO</button>
+    </form>
+</div>
 
 <script>
-    const dateInput = document.querySelector('input[name="fecha"]') as HTMLInputElement;
+    const inputFecha = document.getElementById('input-fecha') as HTMLInputElement;
+    const selectHora = document.getElementById('select-hora') as HTMLSelectElement;
     const errorDiv = document.getElementById('js-error');
 
-    if (dateInput && errorDiv) {
-        dateInput.addEventListener('input', (e) => {
-            const input = e.target as HTMLInputElement;
-            if (!input.value) return;
-            
-            // Creamos la fecha agregando hora para evitar errores de zona horaria
-            const diaSeleccionado = new Date(input.value + 'T00:00:00').getDay();
+    type HorarioConfig = { inicio: number; fin: number } | null;
+    
+    const horarios: Record<number, HorarioConfig> = {
+        0: null,                       // Domingo
+        1: { inicio: 10, fin: 19 },    // Lunes
+        2: { inicio: 10, fin: 20 },    // Martes
+        3: { inicio: 10, fin: 19 },    // Miércoles
+        4: { inicio: 10, fin: 20 },    // Jueves
+        5: { inicio: 10, fin: 19 },    // Viernes
+        6: { inicio: 11, fin: 21 },    // Sábado
+    };
 
-            // 0 = Domingo, 1 = Lunes
-            if (diaSeleccionado === 0 || diaSeleccionado === 1) {
-                // 1. Borramos la fecha
-                input.value = ''; 
-                
-                // 2. Mostramos el mensaje en el div rojo
-                errorDiv.textContent = '⛔ La barbería permanece cerrada los Domingos y Lunes. Por favor selecciona otro día.';
-                errorDiv.style.display = 'block'; // Lo hacemos visible
-                
-                // (Opcional) Borrar el mensaje después de 5 segundos
-                setTimeout(() => {
-                    errorDiv.style.display = 'none';
-                }, 5000);
+    if (inputFecha && selectHora) {
+        inputFecha.addEventListener('input', () => {
+            if (errorDiv) errorDiv.style.display = 'none';
+            selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
+            selectHora.disabled = true;
+
+            if (!inputFecha.value) return;
+
+            const fecha = new Date(inputFecha.value + 'T00:00:00');
+            const diaSemana = fecha.getDay();
+
+            const configDia = horarios[diaSemana];
+
+            if (configDia === null) {
+                inputFecha.value = '';
+                if (errorDiv) {
+                    errorDiv.textContent = '⛔ Domingos cerrado.';
+                    errorDiv.style.display = 'block';
+                }
             } else {
-                // Si elige un día válido, ocultamos el error si estaba visible
-                errorDiv.style.display = 'none';
+                selectHora.disabled = false;
+                for (let h = configDia.inicio; h <= configDia.fin; h++) {
+                    const horaTexto = `${h}:00`;
+                    const option = document.createElement('option');
+                    option.value = horaTexto;
+                    option.textContent = horaTexto;
+                    selectHora.appendChild(option);
+                }
             }
         });
     }
 </script>
 
 <style>
-    /* ... (Mantén los mismos estilos anteriores) ... */
-    .booking-section {
-        background-color: var(--color-text-black);
-        color: var(--color-bg-beige);
-        text-align: center;
-    }
-
-    h2 {
-        font-size: 3rem;
-        margin-bottom: 10px;
-        color: var(--color-bg-beige);
-    }
-
-    .subtitle {
-        font-size: 1.1rem;
-        opacity: 0.8;
-        margin-bottom: 40px;
-    }
-    
-    .booking-container {
-        max-width: 600px;
-        margin: 0 auto;
-        background-color: rgba(255,255,255, 0.05);
-        padding: 40px;
-        border-radius: 8px;
+    /* TARJETA TIPO APP (Lo que te gustaba) */
+    .card-form {
+        background-color: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(242, 240, 230, 0.1);
+        padding: 30px;
+        border-radius: 16px;
+        width: 100%;
+        max-width: 450px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
     }
 
     .mensaje-alerta.error {
-        background-color: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-        padding: 15px;
+        background-color: #3b1215;
+        color: #ff8a8a;
+        border: 1px solid #63181d;
+        padding: 10px;
         margin-bottom: 20px;
-        border-radius: 4px;
-        font-weight: 600;
-        text-align: left;
+        border-radius: 8px;
+        font-size: 0.9rem;
+        text-align: center;
     }
 
-    .form-group {
+    .row-group {
         display: flex;
         gap: 15px;
         margin-bottom: 20px;
     }
 
-    .fecha-label, .hora-label {
+    .full-width {
+        width: 100%;
+        margin-bottom: 20px;
+    }
+
+    .field-wrapper {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        text-align: left;
-        width: 100%;
-        color: rgba(242, 240, 230, 0.8);
-        font-size: 0.9rem;
-    }
-    .fecha-label span, .hora-label span {
-        margin-bottom: 5px;
-        margin-left: 2px;
+        gap: 8px; /* Espacio entre Label e Input */
     }
 
-    input, select {
-        width: 100%;
-        padding: 15px;
-        background-color: transparent;
-        border: 1px solid rgba(242, 240, 230, 0.3);
+    /* ETIQUETAS (LABELS) FUERA DEL INPUT */
+    label {
         color: var(--color-bg-beige);
-        font-family: var(--font-body);
-        font-size: 1rem;
-        border-radius: 4px;
-        outline: none;
+        font-size: 0.7rem;
+        font-weight: bold;
+        opacity: 0.6;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-left: 5px; /* Pequeña sangría para alinear */
     }
 
-    input:focus, select:focus {
-        border-color: var(--color-bg-beige);
-        background-color: rgba(255,255,255, 0.05);
-    }
-
-    input[type="date"] {
-        color-scheme: dark;
-    }
-
-    select option {
-        background-color: #333;
-        color: #fff;
-    }
-
-    .btn-submit {
+    /* INPUTS TIPO CAJA */
+    .input-app {
         width: 100%;
+        padding: 14px 16px;
+        background-color: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(242, 240, 230, 0.15);
+        color: var(--color-bg-beige);
+        font-size: 0.95rem;
+        border-radius: 10px;
+        outline: none;
+        transition: 0.2s ease-in-out;
+        font-family: var(--font-body);
+    }
+
+    .input-app:focus {
+        border-color: var(--color-bg-beige);
+        background-color: rgba(0, 0, 0, 0.5);
+        transform: translateY(-1px);
+    }
+
+    .input-app.centered {
+        text-align: center;
+    }
+
+    /* --- ESTILO DE LOS PLACEHOLDERS --- */
+    /* Aquí está el truco: hacemos que el texto de relleno se vea sutil y diseñado */
+    .input-app::placeholder {
+        color: rgba(242, 240, 230, 0.3); /* Color mucho más suave */
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    /* Ajustes específicos */
+    input[type="date"] { color-scheme: dark; }
+    select option { background-color: #222; color: #fff; }
+
+    /* BOTÓN */
+    .btn-app {
+        width: 100%;
+        padding: 18px;
         margin-top: 10px;
         background-color: var(--color-bg-beige);
         color: var(--color-text-black);
         border: none;
-        font-weight: 700;
+        border-radius: 50px;
+        font-weight: 800;
+        font-size: 1rem;
+        letter-spacing: 2px;
         cursor: pointer;
-        transition: 0.3s;
+        transition: transform 0.2s;
+        text-transform: uppercase;
+        box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1);
     }
 
-    .btn-submit:hover {
+    .btn-app:hover {
         background-color: #fff;
         transform: scale(1.02);
     }
 
-    @media (max-width: 768px) {
-        .form-group {
-            flex-direction: column;
-            gap: 20px;
-        }
+    @media (max-width: 480px) {
+        .row-group { flex-direction: column; gap: 20px; }
     }
 </style>

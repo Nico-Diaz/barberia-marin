@@ -1,88 +1,114 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { db, Turnos, eq, asc } from 'astro:db';
+import { supabase } from '../lib/supabase';
 
-// 1. Configuración anti-caché
+// 1. Evitamos caché
 export const prerender = false;
 Astro.response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
-Astro.response.headers.set('Pragma', 'no-cache');
-Astro.response.headers.set('Expires', '0');
 
-// 2. Seguridad
-if (!Astro.cookies.has('admin_access')) {
+// --- SEGURIDAD ---
+const accessToken = Astro.cookies.get("sb-access-token");
+const refreshToken = Astro.cookies.get("sb-refresh-token");
+
+if (!accessToken || !refreshToken) {
     return Astro.redirect('/login');
 }
 
-// 3. Lógica del Servidor (POST)
+const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken.value);
+
+if (authError || !user) {
+    Astro.cookies.delete("sb-access-token", { path: "/" });
+    Astro.cookies.delete("sb-refresh-token", { path: "/" });
+    return Astro.redirect('/login');
+}
+
+// --- ACCIONES (POST) ---
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
+    const action = formData.get('action');
 
-    if (formData.get('action') === 'logout') {
-        Astro.cookies.delete('admin_access', { path: '/' });
+    if (action === 'logout') {
+        await supabase.auth.signOut();
+        Astro.cookies.delete("sb-access-token", { path: "/" });
+        Astro.cookies.delete("sb-refresh-token", { path: "/" });
         return Astro.redirect('/login');
     }
 
     const idToDelete = formData.get('id');
     if (idToDelete) {
-        try {
-            await db.delete(Turnos).where(eq(Turnos.id, Number(idToDelete)));
-        } catch (error) {
-            console.error('Error borrando:', error);
-        }
+        await supabase.from('turnos').delete().eq('id', idToDelete);
     }
 }
 
-const turnos = await db.select().from(Turnos).orderBy(asc(Turnos.fecha), asc(Turnos.hora));
-const hoy = new Date().toLocaleDateString('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
+// --- CARGAR DATOS ---
+const { data: turnos } = await supabase
+    .from('turnos')
+    .select('*')
+    .order('fecha', { ascending: true })
+    .order('hora', { ascending: true });
+
+const listaTurnos = turnos || [];
+
+const hoy = new Date().toLocaleDateString('es-AR', { 
+    year: 'numeric', month: '2-digit', day: '2-digit' 
+}).split('/').reverse().join('-');
 ---
 
-<Layout title="Panel de Administración | Ezequiel Marin">
-    
-    <div class="admin-container">
+<Layout title="Panel Admin | Barbería Marin">
+    <div class="admin-wrapper">
+        
         <header class="admin-header">
-            <h1>Panel de Turnos</h1>
-            <div class="header-actions">
-                <form method="POST">
-                    <input type="hidden" name="action" value="logout">
-                    <button type="submit" class="btn-logout">Cerrar Sesión</button>
-                </form>
+            <div class="titulo">
+                <h1>PANEL DE CONTROL</h1>
+                <p>Bienvenido, Admin</p>
             </div>
+            
+            <form method="POST">
+                <input type="hidden" name="action" value="logout">
+                <button type="submit" class="btn-logout">
+                    SALIR
+                </button>
+            </form>
         </header>
 
-        <div class="table-wrapper">
-            {turnos.length === 0 ? (
-                <p class="no-data">No hay turnos registrados todavía.</p>
+        <div class="table-container">
+            {listaTurnos.length === 0 ? (
+                <div class="empty-state">
+                    <p>No hay turnos registrados todavía.</p>
+                </div>
             ) : (
-                <table>
+                /* Clase 'responsive-table' para activar la magia CSS */
+                <table class="responsive-table">
                     <thead>
                         <tr>
-                            <th>Fecha</th>
-                            <th>Hora</th>
-                            <th>Cliente</th>
-                            <th>Teléfono</th>
-                            <th>Acciones</th>
+                            <th>FECHA</th>
+                            <th>HORA</th>
+                            <th>CLIENTE</th>
+                            <th>CONTACTO</th>
+                            <th>ACCIÓN</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {turnos.map((turno) => (
+                        {listaTurnos.map((turno) => (
                             <tr class={turno.fecha === hoy ? "es-hoy" : ""}>
-                                <td>
-                                    {turno.fecha}
-                                    {turno.fecha === hoy && <span class="tag-hoy">HOY</span>}
+                                <td data-label="FECHA">
+                                    <div class="fecha-celda">
+                                        {turno.fecha.split('-').reverse().join('/')}
+                                        {turno.fecha === hoy && <span class="badge-hoy">HOY</span>}
+                                    </div>
                                 </td>
-                                <td>{turno.hora}</td>
-                                <td class="capitalize">{turno.nombre} {turno.apellido}</td>
-                                <td>
+                                <td data-label="HORA" class="hora-text">{turno.hora} hs</td>
+                                <td data-label="CLIENTE" class="cliente-text">{turno.nombre} {turno.apellido}</td>
+                                <td data-label="CONTACTO">
                                     {turno.telefono ? (
-                                        <a href={`https://wa.me/${turno.telefono}`} target="_blank" class="whatsapp-link">
-                                            {turno.telefono}
+                                        <a href={`https://wa.me/${turno.telefono}`} target="_blank" class="whatsapp-btn">
+                                            WhatsApp
                                         </a>
-                                    ) : '-'}
+                                    ) : <span class="no-data">-</span>}
                                 </td>
-                                <td>
-                                    <form method="POST" id={`form-borrar-${turno.id}`} style="margin: 0;">
+                                <td class="accion-td">
+                                    <form method="POST" id={`form-borrar-${turno.id}`}>
                                         <input type="hidden" name="id" value={turno.id} />
-                                        
                                         <button 
                                             type="button" 
                                             class="btn-delete accion-borrar"
@@ -100,118 +126,175 @@ const hoy = new Date().toLocaleDateString('es-AR', { year: 'numeric', month: '2-
             )}
         </div>
     </div>
-
-    <script>
-        import Swal from 'sweetalert2';
-
-        // Escuchamos clics en toda la página
-        document.addEventListener('click', (e) => {
-            // TypeScript/Astro necesita saber que e.target es un elemento HTML
-            const target = e.target as HTMLElement;
-            
-            // Buscamos si el clic fue en un botón de borrar (o dentro de uno)
-            const boton = target.closest('.accion-borrar');
-            
-            if (boton) {
-                const id = boton.getAttribute('data-id');
-                const nombre = boton.getAttribute('data-nombre');
-                const form = document.getElementById(`form-borrar-${id}`) as HTMLFormElement;
-
-                if (form) {
-                    Swal.fire({
-                        title: '¿Eliminar turno?',
-                        text: `Vas a borrar a ${nombre}.`,
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#d33',
-                        cancelButtonColor: '#3085d6',
-                        confirmButtonText: 'Sí, eliminar',
-                        cancelButtonText: 'Cancelar'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            form.submit();
-                        }
-                    });
-                }
-            }
-        });
-    </script>
-
-    <style>
-        /* ESTILOS (IGUAL QUE ANTES) */
-        .admin-container {
-            padding: 120px 20px 60px;
-            min-height: 100vh;
-            background-color: #fff;
-        }
-
-        .admin-header {
-            max-width: 1000px;
-            margin: 0 auto 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 2px solid var(--color-bg-beige);
-            padding-bottom: 20px;
-        }
-
-        h1 { font-size: 2rem; color: var(--color-text-black); }
-
-        .table-wrapper {
-            max-width: 1000px;
-            margin: auto;
-            overflow-x: auto;
-            box-shadow: 0 0 20px rgba(0,0,0,0.05);
-            border-radius: 8px;
-        }
-
-        table { width: 100%; border-collapse: collapse; font-family: var(--font-body); background-color: white; }
-
-        th {
-            text-align: left; padding: 15px;
-            background-color: var(--color-text-black);
-            color: var(--color-bg-beige);
-            font-family: var(--font-titles);
-            font-weight: 400; letter-spacing: 1px;
-        }
-
-        td { padding: 15px; border-bottom: 1px solid #eee; color: #333; }
-
-        .es-hoy { background-color: #e8f5e9 !important; position: relative; }
-        .es-hoy td:first-child { border-left: 5px solid #2ecc71; font-weight: bold; }
-        .tag-hoy {
-            display: inline-block; background-color: #2ecc71; color: white;
-            font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; margin-left: 8px; vertical-align: middle;
-        }
-
-        tr:hover td { background-color: #fafafa; }
-        .es-hoy:hover td { background-color: #dcedc8 !important; }
-
-        .capitalize { text-transform: capitalize; }
-        .whatsapp-link { color: green; font-weight: 600; text-decoration: none; }
-
-        .btn-delete {
-            background-color: #ff4d4d;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.8rem;
-            transition: background 0.3s;
-            position: relative;
-            z-index: 10;
-        }
-        .btn-delete:hover { background-color: #cc0000; }
-
-        .btn-logout {
-            background: transparent; border: 1px solid var(--color-text-black);
-            padding: 8px 15px; cursor: pointer;
-            font-family: var(--font-titles); text-transform: uppercase;
-            font-size: 0.8rem; transition: 0.3s;
-        }
-        .btn-logout:hover { background: var(--color-text-black); color: white; }
-
-        .no-data { text-align: center; color: #777; font-size: 1.2rem; margin-top: 50px; }
-    </style>
 </Layout>
+
+<script>
+    import Swal from 'sweetalert2';
+
+    document.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        const boton = target.closest('.accion-borrar');
+        
+        if (boton) {
+            const id = boton.getAttribute('data-id');
+            const nombre = boton.getAttribute('data-nombre');
+            const form = document.getElementById(`form-borrar-${id}`) as HTMLFormElement;
+
+            if (form) {
+                Swal.fire({
+                    title: '¿Eliminar turno?',
+                    text: `Vas a borrar el turno de ${nombre}.`,
+                    icon: 'warning',
+                    background: '#1a1a1a',
+                    color: '#fff',
+                    showCancelButton: true,
+                    confirmButtonColor: '#d33',
+                    cancelButtonColor: '#444',
+                    confirmButtonText: 'Sí, borrar',
+                    cancelButtonText: 'Cancelar'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        form.submit();
+                    }
+                });
+            }
+        }
+    });
+</script>
+
+<style>
+    /* --- ESTILOS GENERALES (Desktop primero) --- */
+    .admin-wrapper {
+        min-height: 100vh;
+        background-color: var(--color-text-black);
+        padding: 40px 20px;
+        color: var(--color-bg-beige);
+    }
+
+    .admin-header {
+        max-width: 1000px;
+        margin: 0 auto 40px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(242, 240, 230, 0.1);
+        padding-bottom: 20px;
+    }
+
+    .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; }
+    .titulo p { font-size: 0.9rem; opacity: 0.6; margin: 5px 0 0 0; }
+
+    .btn-logout {
+        background: rgba(255, 255, 255, 0.1);
+        border: none;
+        color: #fff;
+        padding: 10px 16px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.8rem;
+        font-weight: bold;
+        transition: 0.3s;
+    }
+    .btn-logout:hover { background: #d33; }
+
+    .table-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        /* En Desktop es transparente, en mobile será invisible el contenedor pero visibles las cartas */
+        background-color: rgba(255, 255, 255, 0.03);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    table { width: 100%; border-collapse: collapse; font-family: var(--font-body); }
+    th { text-align: left; padding: 18px; background-color: rgba(0, 0, 0, 0.4); font-size: 0.75rem; letter-spacing: 1px; color: rgba(242, 240, 230, 0.5); font-weight: bold; }
+    td { padding: 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+
+    .es-hoy { background-color: rgba(46, 204, 113, 0.08); }
+    .es-hoy td:first-child { border-left: 4px solid #2ecc71; }
+    .badge-hoy { background-color: #2ecc71; color: #000; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 8px; vertical-align: middle; }
+
+    .hora-text { font-weight: bold; color: #fff; }
+    .cliente-text { text-transform: capitalize; color: #eee; }
+    .no-data { opacity: 0.3; }
+
+    .whatsapp-btn { color: #25D366; text-decoration: none; font-size: 0.85rem; font-weight: bold; border: 1px solid rgba(37, 211, 102, 0.3); padding: 6px 12px; border-radius: 50px; transition: 0.2s; display: inline-block; }
+    .whatsapp-btn:hover { background-color: #25D366; color: #000; }
+
+    .btn-delete { background: transparent; color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; transition: 0.2s; }
+    .btn-delete:hover { background: #ff6b6b; color: #fff; }
+    .empty-state { padding: 50px; text-align: center; opacity: 0.5; }
+
+    /* --- ESTILOS RESPONSIVE (CELULAR) - MODO TARJETA --- */
+    @media (max-width: 768px) {
+        .admin-header { flex-direction: column; gap: 20px; text-align: center; }
+        
+        /* Quitamos el estilo de "caja única" del contenedor de la tabla */
+        .table-container {
+            background: transparent;
+            box-shadow: none;
+            border: none;
+        }
+
+        /* Ocultamos los encabezados de la tabla (TH) */
+        table thead { display: none; }
+
+        /* Transformamos la tabla en bloques */
+        table, table tbody, table tr, table td {
+            display: block;
+            width: 100%;
+        }
+
+        /* Cada FILA ahora es una TARJETA */
+        table tr {
+            background-color: rgba(255, 255, 255, 0.05);
+            margin-bottom: 20px; /* Espacio entre tarjetas */
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            position: relative;
+        }
+
+        /* Ajuste especial para tarjeta de HOY */
+        .es-hoy td:first-child { border-left: none; } /* Quitamos el borde viejo */
+        .es-hoy {
+            border-left: 4px solid #2ecc71; /* Borde verde en toda la tarjeta */
+            background-color: rgba(46, 204, 113, 0.05);
+        }
+
+        /* Las CELDAS ahora son renglones dentro de la tarjeta */
+        table td {
+            padding: 10px 0;
+            text-align: right; /* Contenido a la derecha */
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            justify-content: space-between; /* Etiqueta izq - Dato der */
+            align-items: center;
+        }
+
+        table td:last-child {
+            border-bottom: none;
+            padding-bottom: 0;
+            padding-top: 15px;
+            justify-content: center; /* Botón eliminar centrado */
+        }
+
+        /* Magia: Usamos data-label para poner el título a la izquierda */
+        table td::before {
+            content: attr(data-label);
+            float: left;
+            font-weight: bold;
+            font-size: 0.7rem;
+            color: rgba(242, 240, 230, 0.4);
+            letter-spacing: 1px;
+        }
+
+        /* Botón eliminar ancho completo */
+        .btn-delete {
+            width: 100%;
+            text-align: center;
+            padding: 12px;
+        }
+    }
+</style>

@@ -1,101 +1,207 @@
 ---
 import Layout from '../layouts/Layout.astro';
 
-// 1. Recibimos los datos por la URL para personalizar el mensaje
+// 1. Capturamos los datos que vienen en la URL
 const url = new URL(Astro.request.url);
 const nombre = url.searchParams.get('nombre') || 'Cliente';
 const fecha = url.searchParams.get('fecha') || '';
 const hora = url.searchParams.get('hora') || '';
 
-// 2. Preparamos el mensaje de WhatsApp
-// Cambia este número por el de Ezequiel (formato internacional sin +)
-const telefonoEzequiel = "5492612461691"; 
-const mensajeWhatsApp = `Hola Eze, soy ${nombre}. Acabo de reservar en la web para el ${fecha} a las ${hora}. ¿Me lo confirmas?`;
-const linkWhatsApp = `https://wa.me/${telefonoEzequiel}?text=${encodeURIComponent(mensajeWhatsApp)}`;
+// 2. Formateamos la fecha para que se vea bonita (de 2024-10-25 a 25/10/2024)
+const fechaFormateada = fecha.split('-').reverse().join('/');
+
+// 3. Preparamos el mensaje de WhatsApp
+// REEMPLAZA ESTE NÚMERO POR EL TUYO REAL (formato internacional sin +)
+const MI_TELEFONO = "5492612461691"; 
+
+const mensaje = `Hola Ezequiel, soy ${nombre}. Acabo de reservar un turno para el ${fechaFormateada} a las ${hora}hs. Aguardo tu confirmación.`;
+const linkWhatsapp = `https://wa.me/${MI_TELEFONO}?text=${encodeURIComponent(mensaje)}`;
 ---
 
-<Layout title="¡Reserva Recibida!">
-    <div class="success-container">
-        <div class="card">
-            <div class="icon">✅</div>
-            <h1>¡Gracias, {nombre}!</h1>
-            <p>Tu turno para el día <strong>{fecha}</strong> a las <strong>{hora}</strong> ha sido registrado.</p>
-            
-            <p class="instruction">Para terminar, por favor confirma tu asistencia enviando este mensaje:</p>
+<Layout title="¡Turno Confirmado!">
+    <main class="exito-wrapper">
+        
+        <div class="card-exito">
+            <div class="success-icon">
+                <svg viewBox="0 0 24 24" class="check-svg">
+                    <path fill="none" d="M0 0h24v24H0z" />
+                    <path d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10-4.477 10-10 10zm-1.177-7.86l-2.765-2.767L7 12.431l3.119 3.121a1 1 0 0 0 1.414 0l5.952-5.95-1.062-1.062-5.6 5.6z" />
+                </svg>
+            </div>
 
-            <a href={linkWhatsApp} class="btn-whatsapp" target="_blank">
-                Confirmar por WhatsApp 💬
+            <h1>¡RESERVA ENVIADA!</h1>
+            <p class="subtitulo">Tu turno quedó registrado con éxito.</p>
+
+            <div class="detalles-turno">
+                <div class="dato">
+                    <span class="label">FECHA</span>
+                    <span class="valor">{fechaFormateada}</span>
+                </div>
+                <div class="linea"></div>
+                <div class="dato">
+                    <span class="label">HORA</span>
+                    <span class="valor">{hora} hs</span>
+                </div>
+            </div>
+
+            <p class="aviso-importante">
+                Para terminar, envíanos un WhatsApp para confirmar tu asistencia.
+            </p>
+
+            <a href={linkWhatsapp} class="btn-whatsapp" target="_blank">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-8.683-2.031-.967-.272-.297-.471-.446-.917-.446-.446 0-.966.173-1.462.718-.496.545-1.908 1.858-1.908 4.529 0 2.671 1.958 5.242 2.231 5.613.273.371 3.824 5.836 9.248 8.169 3.664 1.576 4.41.264 4.881-.445.471-.709 1.487-2.771 1.833-3.662.347-.892.694-1.438.991-1.289.297.149 1.758.868 2.055 1.016.297.149.496.223.57.347.074.124.074.718-.174 1.411-.248.694-1.438 1.338-1.983 1.338-.545 0-1.089-.149-1.585-.347z"/></svg>
+                ENVIAR MENSAJE
             </a>
 
-            <a href="/" class="btn-back">Volver al inicio</a>
+            <a href="/" class="btn-volver">Volver al inicio</a>
         </div>
-    </div>
+    </main>
 </Layout>
 
 <style>
-    .success-container {
-        height: 100vh;
+    .exito-wrapper {
+        min-height: 100vh;
+        background-color: var(--color-text-black);
         display: flex;
         justify-content: center;
         align-items: center;
-        background-color: var(--color-bg-beige);
-        text-align: center;
         padding: 20px;
+        text-align: center;
     }
 
-    .card {
-        background: white;
-        padding: 40px;
-        border-radius: 8px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-        max-width: 500px;
+    .card-exito {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(242, 240, 230, 0.1);
+        padding: 40px 30px;
+        border-radius: 20px;
         width: 100%;
+        max-width: 400px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
     }
 
-    .icon {
-        font-size: 4rem;
+    /* Icono Check Animado */
+    .success-icon {
+        width: 80px;
+        height: 80px;
+        background-color: rgba(46, 204, 113, 0.1); /* Verde suave */
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         margin-bottom: 20px;
+        animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .check-svg {
+        width: 40px;
+        height: 40px;
+        fill: #2ecc71; /* Verde fuerte */
     }
 
     h1 {
-        font-size: 2rem;
-        margin-bottom: 15px;
-        color: var(--color-text-black);
+        font-family: var(--font-titles);
+        color: var(--color-bg-beige);
+        font-size: 1.8rem;
+        margin: 0;
+        letter-spacing: 1px;
     }
 
-    p {
-        font-size: 1.1rem;
-        color: #555;
+    .subtitulo {
+        color: rgba(242, 240, 230, 0.6);
+        font-size: 0.9rem;
+        margin-top: 5px;
         margin-bottom: 30px;
     }
 
-    .instruction {
-        font-size: 0.9rem;
-        color: #888;
-        margin-bottom: 20px;
+    /* Tarjeta de detalles */
+    .detalles-turno {
+        background-color: rgba(0, 0, 0, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        width: 100%;
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        margin-bottom: 25px;
+        border: 1px solid rgba(242, 240, 230, 0.05);
     }
 
-    .btn-whatsapp {
-        display: block;
-        background-color: #25D366;
-        color: white;
-        padding: 15px;
-        border-radius: 50px;
-        text-decoration: none;
+    .dato {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .label {
+        font-size: 0.7rem;
+        color: rgba(242, 240, 230, 0.5);
         font-weight: bold;
+        margin-bottom: 5px;
+        letter-spacing: 1px;
+    }
+
+    .valor {
         font-size: 1.1rem;
+        color: var(--color-bg-beige);
+        font-weight: bold;
+    }
+
+    .linea {
+        width: 1px;
+        height: 30px;
+        background-color: rgba(242, 240, 230, 0.1);
+    }
+
+    .aviso-importante {
+        font-size: 0.85rem;
+        color: rgba(242, 240, 230, 0.8);
         margin-bottom: 20px;
-        transition: transform 0.2s;
+        line-height: 1.4;
+    }
+
+    /* Botones */
+    .btn-whatsapp {
+        background-color: #25D366; /* Color oficial WhatsApp */
+        color: #fff;
+        text-decoration: none;
+        width: 100%;
+        padding: 16px;
+        border-radius: 50px;
+        font-weight: 800;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        margin-bottom: 15px;
+        font-size: 0.95rem;
+        box-shadow: 0 5px 15px rgba(37, 211, 102, 0.2);
     }
 
     .btn-whatsapp:hover {
-        transform: scale(1.05);
-        background-color: #1ebc57;
+        transform: scale(1.02);
+        box-shadow: 0 8px 20px rgba(37, 211, 102, 0.3);
     }
 
-    .btn-back {
-        color: #888;
+    .btn-whatsapp svg {
+        fill: currentColor;
+    }
+
+    .btn-volver {
+        color: rgba(242, 240, 230, 0.5);
+        text-decoration: none;
         font-size: 0.9rem;
-        text-decoration: underline;
+        transition: 0.3s;
+    }
+    .btn-volver:hover {
+        color: var(--color-bg-beige);
+    }
+
+    @keyframes popIn {
+        0% { transform: scale(0); opacity: 0; }
+        100% { transform: scale(1); opacity: 1; }
     }
 </style>

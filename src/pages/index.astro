@@ -1,18 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import Header from '../components/Header.astro';
-import Hero from '../components/Hero.astro';
-import About from '../components/About.astro';
-import Services from '../components/Services.astro';
 import BookingSection from '../components/BookingSection.astro';
-import Footer from '../components/Footer.astro';
-
-// --- LÓGICA DE BACKEND (EL CEREBRO) ---
-import { db, Turnos, eq, and } from 'astro:db';
+// 1. Importamos nuestro nuevo cliente de Supabase
+import { supabase } from '../lib/supabase';
 
 let mensajeError = "";
 
-// Solo ejecutamos esto si alguien apretó el botón "Confirmar Reserva"
 if (Astro.request.method === 'POST') {
   const formData = await Astro.request.formData();
   const nombre = formData.get('nombre') as string;
@@ -21,57 +14,124 @@ if (Astro.request.method === 'POST') {
   const hora = formData.get('hora') as string;
   const telefono = formData.get('telefono') as string;
 
-  // Calculamos qué día de la semana es (0=Domingo, 1=Lunes...)
-  // Agregamos 'T00:00:00' para evitar problemas de zona horaria
   const diaSemana = new Date(fecha + 'T00:00:00').getDay();
+  const horaNum = parseInt(hora.split(':')[0]);
 
   try {
-    // 1. REGLA: La barbería cierra Domingos (0) y Lunes (1)
-    if (diaSemana === 0 || diaSemana === 1) {
-        mensajeError = "La barbería permanece cerrada los Domingos y Lunes. Por favor elige otro día.";
+    let esHorarioValido = false;
+
+    // --- REGLAS DE HORARIOS (Igual que antes) ---
+    if (diaSemana === 0) {
+        mensajeError = "Los domingos permanecemos cerrados.";
     } 
-    // 2. REGLA: Verificar si el turno ya está ocupado
-    else {
-        const turnosExistentes = await db.select().from(Turnos).where(
-            and(
-                eq(Turnos.fecha, fecha),
-                eq(Turnos.hora, hora)
-            )
-        );
+    else if (diaSemana === 1 || diaSemana === 3 || diaSemana === 5) { // L-M-V
+        if (horaNum >= 10 && horaNum <= 19) esHorarioValido = true;
+        else mensajeError = "Los Lun, Mie y Vie abrimos de 10:00 a 19:00.";
+    } 
+    else if (diaSemana === 2 || diaSemana === 4) { // M-J
+        if (horaNum >= 10 && horaNum <= 20) esHorarioValido = true;
+        else mensajeError = "Los Mar y Jue abrimos de 10:00 a 20:00.";
+    } 
+    else if (diaSemana === 6) { // SAB
+        if (horaNum >= 11 && horaNum <= 21) esHorarioValido = true;
+        else mensajeError = "Los Sábados abrimos de 11:00 a 21:00.";
+    }
 
-        if (turnosExistentes.length > 0) {
-            mensajeError = `El horario de las ${hora} del día ${fecha} ya está ocupado.`;
+    if (esHorarioValido) {
+        // 2. CONSULTA SUPABASE: Verificar disponibilidad
+        const { data: turnosExistentes, error: errorSelect } = await supabase
+            .from('turnos')
+            .select('*')
+            .eq('fecha', fecha)
+            .eq('hora', hora);
+
+        if (errorSelect) throw errorSelect;
+
+        if (turnosExistentes && turnosExistentes.length > 0) {
+            mensajeError = `El horario de las ${hora} ya está ocupado.`;
         } else {
-            // SI TODO ESTÁ BIEN -> GUARDAMOS
-            console.log('[TURNOS] Guardando turno:', { nombre, apellido, fecha, hora, telefono });
-            const resultado = await db.insert(Turnos).values({
-                nombre,
-                apellido,
-                fecha,
-                hora,
-                telefono
-            });
-            console.log('[TURNOS] Resultado insert:', resultado);
+            // 3. INSERT SUPABASE: Guardar turno
+            const { error: errorInsert } = await supabase
+                .from('turnos')
+                .insert([
+                    { nombre, apellido, fecha, hora, telefono }
+                ]);
 
-            // Y REDIRIGIMOS A LA PÁGINA DE ÉXITO
+            if (errorInsert) throw errorInsert;
+            
             return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
         }
     }
 
   } catch (error) {
-    console.error("Error al guardar turno:", error);
-    mensajeError = "Ocurrió un error en el sistema. Intenta nuevamente.";
+    console.error("Error Supabase:", error);
+    mensajeError = "Error al conectar con el servidor.";
   }
 }
-// --------------------------------------------------------
 ---
 
-<Layout title="Ezequiel Marin | Barbería Privada">
-	<Header title="Encabezado" />
-	<main>
-		<Hero />
-		<About />
+<Layout title="Reservar Turno | Ezequiel Marin">
+    <main class="app-wrapper">
+        <div class="brand-header">
+            <h1>BARBERÍA MARIN</h1>
+            <p>Reserva tu lugar exclusivo</p>
+        </div>
+
         <BookingSection errorBackend={mensajeError} />
-	</main>
-	<Footer />
+        
+        <footer class="mini-footer">
+            <p>© 2024 Ezequiel Marin</p>
+            <a href="/login" class="admin-link">🔒</a>
+        </footer>
+    </main>
 </Layout>
+
+<style>
+    /* (MISMOS ESTILOS DE ANTES) */
+    .app-wrapper {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background-color: var(--color-text-black);
+        padding: 20px;
+    }
+
+    .brand-header {
+        text-align: center;
+        margin-bottom: 30px;
+        color: var(--color-bg-beige);
+    }
+
+    .brand-header h1 {
+        font-family: var(--font-titles);
+        font-size: 2.5rem;
+        letter-spacing: 2px;
+        margin: 0;
+    }
+
+    .brand-header p {
+        font-size: 0.9rem;
+        opacity: 0.7;
+        margin-top: 5px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .mini-footer {
+        margin-top: 40px;
+        text-align: center;
+        color: rgba(242, 240, 230, 0.3);
+        font-size: 0.8rem;
+    }
+
+    .admin-link {
+        text-decoration: none;
+        color: inherit;
+        font-size: 0.8rem;
+        margin-top: 5px;
+        display: inline-block;
+        opacity: 0.5;
+    }
+</style>

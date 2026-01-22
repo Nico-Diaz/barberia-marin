@@ -1,104 +1,187 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { supabase } from '../lib/supabase';
 
-let error = false;
+let errorMsg = "";
 
-// Si el usuario ya está logueado, lo mandamos directo al admin
-if (Astro.cookies.has('admin_access')) {
-    return Astro.redirect('/admin');
-}
-
-// Lógica cuando se envía el formulario
+// LÓGICA DE LOGIN
 if (Astro.request.method === 'POST') {
-    const data = await Astro.request.formData();
-    const password = data.get('password');
+    const formData = await Astro.request.formData();
+    const email = formData.get('email') as string;
+    const password = formData.get('password') as string;
 
-    // Verificamos contra la variable de entorno
-    if (password === import.meta.env.ADMIN_PASSWORD) {
-        // Contraseña correcta: Creamos la cookie
-        Astro.cookies.set('admin_access', 'true', {
-            path: '/',
-            maxAge: 60 * 60 * 24 * 7, // Dura 7 días
-        });
-        return Astro.redirect('/admin');
+    // 1. Preguntamos a Supabase si el usuario es real
+    const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+    });
+
+    if (error) {
+        errorMsg = "Email o contraseña incorrectos.";
     } else {
-        error = true;
+        // 2. ÉXITO: Supabase nos da tokens (access_token y refresh_token)
+        const { access_token, refresh_token } = data.session;
+
+        // 3. Guardamos esos tokens en cookies seguras (HttpOnly)
+        // Esto es lo que "autoriza" al usuario en las siguientes páginas
+        Astro.cookies.set("sb-access-token", access_token, {
+            path: "/",
+            httpOnly: true, // No accesible por JS (seguridad)
+            secure: true,   // Solo HTTPS
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 7 // 1 semana
+        });
+
+        Astro.cookies.set("sb-refresh-token", refresh_token, {
+            path: "/",
+            httpOnly: true,
+            secure: true,
+            sameSite: "lax",
+            maxAge: 60 * 60 * 24 * 7
+        });
+
+        // 4. Redirigimos al panel
+        return Astro.redirect("/admin");
     }
 }
 ---
 
-<Layout title="Acceso Administrativo">
-    <div class="login-container">
-        <div class="login-box">
-            <h2>Acceso Privado</h2>
-            <p>Ingresa la contraseña maestra para gestionar los turnos.</p>
+<Layout title="Acceso Admin | Barbería Marin">
+    <main class="login-wrapper">
+        <div class="card-form">
+            <div class="brand-header">
+                <h2>ADMINISTRACIÓN</h2>
+                <p>Acceso exclusivo</p>
+            </div>
+
+            {errorMsg && (
+                <div class="mensaje-error">
+                    ⛔ {errorMsg}
+                </div>
+            )}
 
             <form method="POST">
-                <input type="password" name="password" placeholder="Contraseña..." required autofocus />
-                
-                {error && <p class="error-msg">Contraseña incorrecta. Intenta de nuevo.</p>}
-                
-                <button type="submit" class="btn">Entrar</button>
+                <div class="field-wrapper">
+                    <label>EMAIL</label>
+                    <input type="email" name="email" placeholder="admin@barberia.com" required class="input-app">
+                </div>
+
+                <div class="field-wrapper">
+                    <label>CONTRASEÑA</label>
+                    <input type="password" name="password" placeholder="••••••••" required class="input-app">
+                </div>
+
+                <button type="submit" class="btn-app">INGRESAR</button>
             </form>
 
             <a href="/" class="back-link">← Volver al inicio</a>
         </div>
-    </div>
+    </main>
 </Layout>
 
 <style>
-    .login-container {
-        height: 100vh;
+    /* Usamos el mismo estilo "Dark App" que definimos antes */
+    .login-wrapper {
+        min-height: 100vh;
         display: flex;
         justify-content: center;
         align-items: center;
-        background-color: var(--color-bg-beige);
+        background-color: var(--color-text-black);
+        padding: 20px;
     }
 
-    .login-box {
-        background: white;
-        padding: 50px;
-        border: 1px solid #ddd;
-        text-align: center;
+    .card-form {
+        background-color: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(242, 240, 230, 0.1);
+        padding: 40px 30px;
+        border-radius: 16px;
+        width: 100%;
         max-width: 400px;
-        width: 90%;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.5);
     }
 
-    h2 {
-        margin-bottom: 10px;
-        font-size: 2rem;
-    }
-
-    p {
+    .brand-header {
+        text-align: center;
         margin-bottom: 30px;
+        color: var(--color-bg-beige);
+    }
+    
+    h2 { font-size: 1.5rem; margin: 0; letter-spacing: 2px; }
+    p { font-size: 0.8rem; opacity: 0.6; text-transform: uppercase; margin-top: 5px; }
+
+    .mensaje-error {
+        background-color: #3b1215;
+        color: #ff8a8a;
+        padding: 10px;
+        border-radius: 6px;
         font-size: 0.9rem;
-        color: #666;
+        text-align: center;
+        margin-bottom: 20px;
+        border: 1px solid #63181d;
     }
 
-    input {
+    .field-wrapper {
+        margin-bottom: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    label {
+        color: var(--color-bg-beige);
+        font-size: 0.7rem;
+        font-weight: bold;
+        opacity: 0.6;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin-left: 5px;
+    }
+
+    .input-app {
         width: 100%;
-        padding: 15px;
-        margin-bottom: 15px;
-        border: 1px solid #ccc;
+        padding: 14px 16px;
+        background-color: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(242, 240, 230, 0.15);
+        color: var(--color-bg-beige);
+        font-size: 0.95rem;
+        border-radius: 10px;
+        outline: none;
+        transition: 0.2s;
+    }
+
+    .input-app:focus {
+        border-color: var(--color-bg-beige);
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+
+    .btn-app {
+        width: 100%;
+        padding: 16px;
+        margin-top: 10px;
+        background-color: var(--color-bg-beige);
+        color: var(--color-text-black);
+        border: none;
+        border-radius: 50px;
+        font-weight: 800;
         font-size: 1rem;
-    }
-
-    .btn {
-        width: 100%;
         cursor: pointer;
+        transition: transform 0.2s;
+        text-transform: uppercase;
+        letter-spacing: 1px;
     }
 
-    .error-msg {
-        color: red;
-        font-size: 0.9rem;
-        margin-bottom: 15px;
+    .btn-app:hover {
+        background-color: #fff;
+        transform: scale(1.02);
     }
 
     .back-link {
         display: block;
+        text-align: center;
         margin-top: 20px;
-        font-size: 0.8rem;
-        color: #888;
+        color: rgba(242, 240, 230, 0.5);
+        text-decoration: none;
+        font-size: 0.85rem;
     }
+    .back-link:hover { color: var(--color-bg-beige); }
 </style>
