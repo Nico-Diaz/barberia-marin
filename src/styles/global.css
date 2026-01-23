@@ -1,0 +1,44 @@
+/* src/styles/global.css */
+
+/* DEFINICIÓN DE COLORES */
+:root {
+    --color-text-black: #121212;   /* Negro Fondo */
+    --color-bg-beige: #d4af37;     /* Dorado */
+    --color-white-muted: #e0e0e0;  /* Blanco Texto */
+    
+    --font-titles: 'Bebas Neue', sans-serif;
+    --font-body: 'Montserrat', sans-serif;
+}
+
+/* RESET BÁSICO */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* ESTILOS BASE */
+html {
+    font-family: var(--font-body);
+    background-color: #121212; /* Ponemos el hexa directo por seguridad */
+    background: var(--color-text-black);
+    color: var(--color-white-muted);
+}
+
+body {
+    min-height: 100vh;
+    width: 100%;
+    overflow-x: hidden;
+}
+
+/* Estilos para Títulos */
+h1, h2, h3, h4 {
+    font-family: var(--font-titles);
+    color: var(--color-bg-beige);
+    letter-spacing: 1px;
+}
+
+/* Inputs y elementos de formulario */
+input, select, textarea, button {
+    font-family: var(--font-body);
+}
