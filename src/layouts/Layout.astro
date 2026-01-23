@@ -10,12 +10,15 @@ const { title } = Astro.props;
 <html lang="es">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="description" content="Barbería Privada de Ezequiel Marin" />
+		<meta name="description" content="Barbería Marin - Reserva tu turno" />
 		<meta name="viewport" content="width=device-width" />
 		<link rel="icon" type="image/png" href="/favicon.png" />
-		<link rel="preconnect" href="https://fonts.googleapis.com">
-		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-		<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500&family=Oswald:wght@700&display=swap" rel="stylesheet">
+		<meta name="generator" content={Astro.generator} />
+		
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
+
 		<title>{title}</title>
 	</head>
 	<body>
@@ -24,74 +27,46 @@ const { title } = Astro.props;
 </html>
 
 <style is:global>
-	/* --- Variables CSS Globales --- */
+    /* --- VARIABLES GLOBALES (AQUÍ ESTÁ LA MAGIA) --- */
 	:root {
-		--color-bg-beige: #F2F0E6;       /* Beige elegante */
-		--color-text-black: #1A1A1A;     /* Negro intenso */
-		--font-titles: 'Oswald', sans-serif;
-		--font-body: 'Montserrat', sans-serif;
+        /* Paleta de Colores */
+		--color-text-black: #121212;   /* Fondo Oscuro (Casi negro) */
+		--color-bg-beige: #d4af37;     /* Dorado / Beige Premium */
+        --color-white-muted: #e0e0e0;  /* Blanco suave para textos */
+		
+        /* Fuentes */
+        --font-titles: 'Bebas Neue', sans-serif;
+        --font-body: 'Montserrat', sans-serif;
 	}
 
-	/* --- Reset y Estilos Base --- */
+    /* --- RESET BÁSICO --- */
 	* {
-		margin: 0;
-		padding: 0;
-		box-sizing: border-box;
-	}
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
 
 	html {
-		scroll-behavior: smooth;
+		font-family: var(--font-body);
+		background: var(--color-text-black); /* Fondo negro global */
+        color: var(--color-white-muted);     /* Texto blanco por defecto */
 	}
 
 	body {
-		background-color: var(--color-bg-beige);
-		color: var(--color-text-black);
-		font-family: var(--font-body);
-		line-height: 1.6;
-		overflow-x: hidden;
+        min-height: 100vh;
+        width: 100%;
+        overflow-x: hidden;
 	}
 
-	h1, h2, h3, h4 {
-		font-family: var(--font-titles);
-		text-transform: uppercase;
-		letter-spacing: 2px;
-		font-weight: 700;
-	}
+    /* Estilos para Títulos */
+    h1, h2, h3, h4 {
+        font-family: var(--font-titles);
+        color: var(--color-bg-beige); /* Títulos dorados */
+        letter-spacing: 1px;
+    }
 
-	a {
-		text-decoration: none;
-		color: var(--color-text-black);
-		transition: 0.3s;
-	}
-
-	/* Utilidad para contenedores */
-	.container {
-		width: 90%;
-		max-width: 1200px;
-		margin: auto;
-	}
-
-	.section-padding {
-		padding: 80px 0;
-	}
-
-	/* Botón Global */
-	.btn {
-		display: inline-block;
-		padding: 15px 35px;
-		background-color: var(--color-text-black);
-		color: var(--color-bg-beige);
-		font-family: var(--font-titles);
-		text-transform: uppercase;
-		letter-spacing: 1px;
-		font-size: 0.9rem;
-		border: 2px solid var(--color-text-black);
-		cursor: pointer;
-		transition: all 0.3s ease;
-	}
-
-	.btn:hover {
-		background-color: transparent;
-		color: var(--color-text-black);
-	}
+    /* Estilos para inputs automáticos del navegador */
+    input, select, textarea {
+        font-family: var(--font-body);
+    }
 </style>
