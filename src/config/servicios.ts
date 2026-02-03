@@ -1,7 +1,7 @@
 export const servicios = [
     { 
         id: 'corte', 
-        nombre: 'Corte Clásico', 
+        nombre: 'Corte', 
         precio: 9000 
     },
     { 
