@@ -151,7 +151,7 @@ for (let h = 10; h <= 21; h++) {
                                         </a>
                                     ) : <span class="no-data">-</span>}
                                 </td>
-                                <td data-label="ACCIÓN" class="accion-td">
+                                <td  class="accion-td">
                                     <form method="POST" id={`form-borrar-${turno.id}`}>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value={turno.id} />
