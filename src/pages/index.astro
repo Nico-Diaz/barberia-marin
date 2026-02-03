@@ -22,12 +22,12 @@ if (Astro.request.method === 'POST') {
     let esHorarioValido = false;
 
     // --- 1. REGLA DE TIEMPO (AHORA EXACTO) ---
-    // Usamos Date para comparar fecha y hora completas
     const ahora = new Date();
-    // Ajuste manual de zona horaria si el servidor no está en Argentina (GMT-3)
-    // Pero para simplificar, confiamos en la fecha local o ajustamos offsets si es necesario.
-    // Creamos la fecha del turno propuesto
-    const fechaTurno = new Date(`${fecha}T${hora}:00`);
+    
+    // SOLUCIÓN AL ERROR DE HORA:
+    // Agregamos "-03:00" al final para decirle al servidor que esta fecha es de Argentina.
+    // Así, si el servidor está en Londres (UTC), hará la conversión matemática correcta.
+    const fechaTurno = new Date(`${fecha}T${hora}:00-03:00`);
 
     // Validamos que el turno no sea en el pasado
     if (fechaTurno < ahora) {
@@ -39,7 +39,6 @@ if (Astro.request.method === 'POST') {
         mensajeError = "Los domingos permanecemos cerrados.";
     } 
     else if (diaSemana === 1 || diaSemana === 3 || diaSemana === 5) { // L-M-V (10 a 19)
-        // Aceptamos hasta las 19:00 inclusive, pero no 19:30
         if (horaNum >= 10 && (horaNum < 19 || (horaNum === 19 && minStr === '00'))) {
             esHorarioValido = true;
         } else {
@@ -108,7 +107,6 @@ if (Astro.request.method === 'POST') {
 </Layout>
 
 <style>
-    /* ... (MISMOS ESTILOS DE SIEMPRE) ... */
     .app-wrapper { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: var(--color-text-black); padding: 20px; }
     .brand-header { text-align: center; margin-bottom: 30px; color: var(--color-bg-beige); }
     .brand-header h1 { font-family: var(--font-titles); font-size: 2.5rem; letter-spacing: 2px; margin: 0; }
