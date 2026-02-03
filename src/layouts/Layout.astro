@@ -1,5 +1,4 @@
 ---
-// IMPORTAMOS EL CSS GLOBAL AQUÍ ARRIBA
 import '../styles/global.css';
 
 interface Props {
@@ -7,13 +6,17 @@ interface Props {
 }
 
 const { title } = Astro.props;
+
+// Definimos la información para las redes sociales
+const descripcion = "Reserva tu turno en Barbería Ezequiel Marin. Cortes clásicos y modernos.";
+// Esta línea genera la URL completa de tu imagen automáticamente
+const imagenURL = new URL('/og-image.png', Astro.url);
 ---
 
 <!doctype html>
 <html lang="es">
 	<head>
 		<meta charset="UTF-8" />
-		<meta name="description" content="Barbería Marin - Reserva tu turno" />
 		<meta name="viewport" content="width=device-width" />
 		<link rel="icon" type="image/png" href="/favicon.png" />
 		<meta name="generator" content={Astro.generator} />
@@ -23,6 +26,19 @@ const { title } = Astro.props;
         <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Montserrat:wght@400;700&display=swap" rel="stylesheet">
 
 		<title>{title}</title>
+
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={descripcion} />
+        <meta property="og:image" content={imagenURL} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content={Astro.url} />
+        
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={descripcion} />
+        <meta name="twitter:image" content={imagenURL} />
 	</head>
 	<body>
 		<slot />
