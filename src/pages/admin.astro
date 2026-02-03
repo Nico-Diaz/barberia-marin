@@ -2,7 +2,6 @@
 import Layout from '../layouts/Layout.astro';
 import { supabase } from '../lib/supabase';
 
-// 1. Evitamos caché
 export const prerender = false;
 Astro.response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
 
@@ -22,11 +21,14 @@ if (authError || !user) {
     return Astro.redirect('/login');
 }
 
-// --- ACCIONES (POST) ---
+// --- LÓGICA DE ACCIONES (POST) ---
+let mensajeExito = "";
+
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
     const action = formData.get('action');
 
+    // 1. CERRAR SESIÓN
     if (action === 'logout') {
         await supabase.auth.signOut();
         Astro.cookies.delete("sb-access-token", { path: "/" });
@@ -34,9 +36,25 @@ if (Astro.request.method === 'POST') {
         return Astro.redirect('/login');
     }
 
+    // 2. ELIMINAR TURNO
     const idToDelete = formData.get('id');
-    if (idToDelete) {
+    if (idToDelete && action === 'delete') {
         await supabase.from('turnos').delete().eq('id', idToDelete);
+    }
+
+    // 3. CAMBIAR HORARIO (NUEVO)
+    const idToUpdate = formData.get('id');
+    const nuevaHora = formData.get('nueva_hora');
+    
+    if (action === 'update_hora' && idToUpdate && nuevaHora) {
+        const { error } = await supabase
+            .from('turnos')
+            .update({ hora: nuevaHora })
+            .eq('id', idToUpdate);
+            
+        if (!error) {
+            mensajeExito = "Horario actualizado correctamente.";
+        }
     }
 }
 
@@ -52,15 +70,24 @@ const listaTurnos = turnos || [];
 const hoy = new Date().toLocaleDateString('es-AR', { 
     year: 'numeric', month: '2-digit', day: '2-digit' 
 }).split('/').reverse().join('-');
+
+// --- GENERAR LISTA DE HORARIOS (Cada 30 min) ---
+// Generamos de 10:00 a 21:00
+const horariosOpciones: string[] = []; 
+
+for (let h = 10; h <= 21; h++) {
+    horariosOpciones.push(`${h}:00`);
+    if (h < 21) horariosOpciones.push(`${h}:30`);
+}
 ---
 
-<Layout title="Panel Admin | Barbería Marin">
+<Layout title="Admin | Barbería Ezequiel Marin">
     <div class="admin-wrapper">
         
         <header class="admin-header">
             <div class="titulo">
-                <h1>PANEL DE CONTROL</h1>
-                <p>Bienvenido, Admin</p>
+                <h1>BARBERÍA EZEQUIEL MARIN</h1>
+                <p>Panel de Administración</p>
             </div>
             
             <form method="POST">
@@ -71,18 +98,21 @@ const hoy = new Date().toLocaleDateString('es-AR', {
             </form>
         </header>
 
+        {mensajeExito && (
+            <div class="toast-success">{mensajeExito}</div>
+        )}
+
         <div class="table-container">
             {listaTurnos.length === 0 ? (
                 <div class="empty-state">
                     <p>No hay turnos registrados todavía.</p>
                 </div>
             ) : (
-                /* Clase 'responsive-table' para activar la magia CSS */
                 <table class="responsive-table">
                     <thead>
                         <tr>
                             <th>FECHA</th>
-                            <th>HORA</th>
+                            <th>HORARIO</th>
                             <th>CLIENTE</th>
                             <th>CONTACTO</th>
                             <th>ACCIÓN</th>
@@ -97,7 +127,22 @@ const hoy = new Date().toLocaleDateString('es-AR', {
                                         {turno.fecha === hoy && <span class="badge-hoy">HOY</span>}
                                     </div>
                                 </td>
-                                <td data-label="HORA" class="hora-text">{turno.hora} hs</td>
+                                
+                                <td data-label="HORARIO">
+                                    <form method="POST" class="form-cambio-hora">
+                                        <input type="hidden" name="action" value="update_hora">
+                                        <input type="hidden" name="id" value={turno.id}>
+                                        
+                                        <select name="nueva_hora" onchange="this.form.submit()" class="select-hora">
+                                            {horariosOpciones.map((h) => (
+                                                <option value={h} selected={h === turno.hora}>
+                                                    {h} hs
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </form>
+                                </td>
+
                                 <td data-label="CLIENTE" class="cliente-text">{turno.nombre} {turno.apellido}</td>
                                 <td data-label="CONTACTO">
                                     {turno.telefono ? (
@@ -106,8 +151,9 @@ const hoy = new Date().toLocaleDateString('es-AR', {
                                         </a>
                                     ) : <span class="no-data">-</span>}
                                 </td>
-                                <td class="accion-td">
+                                <td data-label="ACCIÓN" class="accion-td">
                                     <form method="POST" id={`form-borrar-${turno.id}`}>
+                                        <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value={turno.id} />
                                         <button 
                                             type="button" 
@@ -131,6 +177,7 @@ const hoy = new Date().toLocaleDateString('es-AR', {
 <script>
     import Swal from 'sweetalert2';
 
+    // Lógica para el botón de borrar
     document.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const boton = target.closest('.accion-borrar');
@@ -160,53 +207,28 @@ const hoy = new Date().toLocaleDateString('es-AR', {
             }
         }
     });
+
+    // Ocultar el toast de éxito después de 3 segundos
+    const toast = document.querySelector('.toast-success');
+    if (toast) {
+        setTimeout(() => {
+            (toast as HTMLElement).style.opacity = '0';
+            setTimeout(() => toast.remove(), 500);
+        }, 3000);
+    }
 </script>
 
 <style>
-    /* --- ESTILOS GENERALES (Desktop primero) --- */
-    .admin-wrapper {
-        min-height: 100vh;
-        background-color: var(--color-text-black);
-        padding: 40px 20px;
-        color: var(--color-bg-beige);
-    }
-
-    .admin-header {
-        max-width: 1000px;
-        margin: 0 auto 40px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        border-bottom: 1px solid rgba(242, 240, 230, 0.1);
-        padding-bottom: 20px;
-    }
-
-    .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; }
+    /* ... (Estilos Generales) ... */
+    .admin-wrapper { min-height: 100vh; background-color: var(--color-text-black); padding: 40px 20px; color: var(--color-bg-beige); }
+    .admin-header { max-width: 1000px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(242, 240, 230, 0.1); padding-bottom: 20px; }
+    .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; text-transform: uppercase; }
     .titulo p { font-size: 0.9rem; opacity: 0.6; margin: 5px 0 0 0; }
 
-    .btn-logout {
-        background: rgba(255, 255, 255, 0.1);
-        border: none;
-        color: #fff;
-        padding: 10px 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 0.8rem;
-        font-weight: bold;
-        transition: 0.3s;
-    }
+    .btn-logout { background: rgba(255, 255, 255, 0.1); border: none; color: #fff; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.3s; }
     .btn-logout:hover { background: #d33; }
 
-    .table-container {
-        max-width: 1000px;
-        margin: 0 auto;
-        /* En Desktop es transparente, en mobile será invisible el contenedor pero visibles las cartas */
-        background-color: rgba(255, 255, 255, 0.03);
-        border-radius: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-        border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
+    .table-container { max-width: 1000px; margin: 0 auto; background-color: rgba(255, 255, 255, 0.03); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); }
     table { width: 100%; border-collapse: collapse; font-family: var(--font-body); }
     th { text-align: left; padding: 18px; background-color: rgba(0, 0, 0, 0.4); font-size: 0.75rem; letter-spacing: 1px; color: rgba(242, 240, 230, 0.5); font-weight: bold; }
     td { padding: 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
@@ -215,86 +237,65 @@ const hoy = new Date().toLocaleDateString('es-AR', {
     .es-hoy td:first-child { border-left: 4px solid #2ecc71; }
     .badge-hoy { background-color: #2ecc71; color: #000; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 8px; vertical-align: middle; }
 
-    .hora-text { font-weight: bold; color: #fff; }
     .cliente-text { text-transform: capitalize; color: #eee; }
     .no-data { opacity: 0.3; }
-
     .whatsapp-btn { color: #25D366; text-decoration: none; font-size: 0.85rem; font-weight: bold; border: 1px solid rgba(37, 211, 102, 0.3); padding: 6px 12px; border-radius: 50px; transition: 0.2s; display: inline-block; }
     .whatsapp-btn:hover { background-color: #25D366; color: #000; }
-
     .btn-delete { background: transparent; color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; transition: 0.2s; }
     .btn-delete:hover { background: #ff6b6b; color: #fff; }
     .empty-state { padding: 50px; text-align: center; opacity: 0.5; }
 
-    /* --- ESTILOS RESPONSIVE (CELULAR) - MODO TARJETA --- */
+    /* ESTILOS DEL SELECT EDITABLE */
+    .select-hora {
+        background-color: rgba(0,0,0,0.3);
+        color: var(--color-bg-beige);
+        border: 1px solid rgba(242, 240, 230, 0.2);
+        padding: 8px;
+        border-radius: 6px;
+        font-family: var(--font-body);
+        font-size: 0.9rem;
+        cursor: pointer;
+        outline: none;
+    }
+    .select-hora:focus {
+        border-color: var(--color-bg-beige);
+        background-color: rgba(0,0,0,0.6);
+    }
+
+    /* TOAST DE ÉXITO */
+    .toast-success {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: #2ecc71;
+        color: #000;
+        padding: 12px 24px;
+        border-radius: 50px;
+        font-weight: bold;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        z-index: 1000;
+        animation: slideDown 0.3s ease-out;
+        transition: opacity 0.5s;
+    }
+
+    @keyframes slideDown {
+        from { top: -50px; opacity: 0; }
+        to { top: 20px; opacity: 1; }
+    }
+
+    /* RESPONSIVE */
     @media (max-width: 768px) {
         .admin-header { flex-direction: column; gap: 20px; text-align: center; }
-        
-        /* Quitamos el estilo de "caja única" del contenedor de la tabla */
-        .table-container {
-            background: transparent;
-            box-shadow: none;
-            border: none;
-        }
-
-        /* Ocultamos los encabezados de la tabla (TH) */
+        .table-container { background: transparent; box-shadow: none; border: none; }
         table thead { display: none; }
-
-        /* Transformamos la tabla en bloques */
-        table, table tbody, table tr, table td {
-            display: block;
-            width: 100%;
-        }
-
-        /* Cada FILA ahora es una TARJETA */
-        table tr {
-            background-color: rgba(255, 255, 255, 0.05);
-            margin-bottom: 20px; /* Espacio entre tarjetas */
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 15px;
-            position: relative;
-        }
-
-        /* Ajuste especial para tarjeta de HOY */
-        .es-hoy td:first-child { border-left: none; } /* Quitamos el borde viejo */
-        .es-hoy {
-            border-left: 4px solid #2ecc71; /* Borde verde en toda la tarjeta */
-            background-color: rgba(46, 204, 113, 0.05);
-        }
-
-        /* Las CELDAS ahora son renglones dentro de la tarjeta */
-        table td {
-            padding: 10px 0;
-            text-align: right; /* Contenido a la derecha */
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            display: flex;
-            justify-content: space-between; /* Etiqueta izq - Dato der */
-            align-items: center;
-        }
-
-        table td:last-child {
-            border-bottom: none;
-            padding-bottom: 0;
-            padding-top: 15px;
-            justify-content: center; /* Botón eliminar centrado */
-        }
-
-        /* Magia: Usamos data-label para poner el título a la izquierda */
-        table td::before {
-            content: attr(data-label);
-            float: left;
-            font-weight: bold;
-            font-size: 0.7rem;
-            color: rgba(242, 240, 230, 0.4);
-            letter-spacing: 1px;
-        }
-
-        /* Botón eliminar ancho completo */
-        .btn-delete {
-            width: 100%;
-            text-align: center;
-            padding: 12px;
-        }
+        table, table tbody, table tr, table td { display: block; width: 100%; }
+        table tr { background-color: rgba(255, 255, 255, 0.05); margin-bottom: 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 15px; position: relative; }
+        .es-hoy td:first-child { border-left: none; }
+        .es-hoy { border-left: 4px solid #2ecc71; background-color: rgba(46, 204, 113, 0.05); }
+        table td { padding: 10px 0; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; }
+        table td:last-child { border-bottom: none; padding-bottom: 0; padding-top: 15px; justify-content: center; }
+        table td::before { content: attr(data-label); float: left; font-weight: bold; font-size: 0.7rem; color: rgba(242, 240, 230, 0.4); letter-spacing: 1px; }
+        .btn-delete { width: 100%; text-align: center; padding: 12px; }
     }
 </style>

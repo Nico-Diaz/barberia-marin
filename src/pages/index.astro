@@ -14,52 +14,55 @@ if (Astro.request.method === 'POST') {
   const telefono = formData.get('telefono') as string;
 
   const diaSemana = new Date(fecha + 'T00:00:00').getDay();
-  const horaNum = parseInt(hora.split(':')[0]);
+  // Parseamos hora y minutos para validaciones
+  const [horaStr, minStr] = hora.split(':');
+  const horaNum = parseInt(horaStr);
 
   try {
     let esHorarioValido = false;
 
-    // --- 1. REGLA DE TIEMPO (NUEVO) ---
-    // Creamos objetos de fecha para comparar
-    // "Ahora" en Argentina
-    const ahora = new Date(); 
-    
-    // Fecha del turno (Agregamos la hora elegida)
+    // --- 1. REGLA DE TIEMPO (AHORA EXACTO) ---
+    // Usamos Date para comparar fecha y hora completas
+    const ahora = new Date();
+    // Ajuste manual de zona horaria si el servidor no está en Argentina (GMT-3)
+    // Pero para simplificar, confiamos en la fecha local o ajustamos offsets si es necesario.
+    // Creamos la fecha del turno propuesto
     const fechaTurno = new Date(`${fecha}T${hora}:00`);
 
-    // Si la fecha del turno es ANTERIOR a ahora, error.
-    // (Le damos 1 minuto de margen por si acaso)
+    // Validamos que el turno no sea en el pasado
     if (fechaTurno < ahora) {
-         // Pequeño ajuste: Si es el mismo día y la hora ya pasó
-         // Solo validamos esto si la fecha es HOY.
-         const hoyString = ahora.toISOString().split('T')[0];
-         if (fecha === hoyString) {
-             const horaActual = ahora.getHours();
-             if (horaNum <= horaActual) {
-                 throw { message: "No puedes reservar en un horario que ya pasó." };
-             }
-         }
+         throw { message: "No puedes reservar en un horario que ya pasó." };
     }
 
-    // --- 2. REGLAS DE DÍAS Y HORARIOS (Igual que antes) ---
+    // --- 2. REGLAS DE DÍAS Y HORARIOS ---
     if (diaSemana === 0) {
         mensajeError = "Los domingos permanecemos cerrados.";
     } 
-    else if (diaSemana === 1 || diaSemana === 3 || diaSemana === 5) { // L-M-V
-        if (horaNum >= 10 && horaNum <= 19) esHorarioValido = true;
-        else mensajeError = "Los Lun, Mie y Vie abrimos de 10:00 a 19:00.";
+    else if (diaSemana === 1 || diaSemana === 3 || diaSemana === 5) { // L-M-V (10 a 19)
+        // Aceptamos hasta las 19:00 inclusive, pero no 19:30
+        if (horaNum >= 10 && (horaNum < 19 || (horaNum === 19 && minStr === '00'))) {
+            esHorarioValido = true;
+        } else {
+            mensajeError = "Los Lun, Mie y Vie abrimos de 10:00 a 19:00.";
+        }
     } 
-    else if (diaSemana === 2 || diaSemana === 4) { // M-J
-        if (horaNum >= 10 && horaNum <= 20) esHorarioValido = true;
-        else mensajeError = "Los Mar y Jue abrimos de 10:00 a 20:00.";
+    else if (diaSemana === 2 || diaSemana === 4) { // M-J (10 a 20)
+        if (horaNum >= 10 && (horaNum < 20 || (horaNum === 20 && minStr === '00'))) {
+            esHorarioValido = true;
+        } else {
+            mensajeError = "Los Mar y Jue abrimos de 10:00 a 20:00.";
+        }
     } 
-    else if (diaSemana === 6) { // SAB
-        if (horaNum >= 11 && horaNum <= 21) esHorarioValido = true;
-        else mensajeError = "Los Sábados abrimos de 11:00 a 21:00.";
+    else if (diaSemana === 6) { // SAB (11 a 21)
+        if (horaNum >= 11 && (horaNum < 21 || (horaNum === 21 && minStr === '00'))) {
+            esHorarioValido = true;
+        } else {
+            mensajeError = "Los Sábados abrimos de 11:00 a 21:00.";
+        }
     }
 
     if (esHorarioValido && !mensajeError) {
-        // Consultar Supabase
+        // Consultar disponibilidad exacta
         const { data: turnosExistentes, error: errorSelect } = await supabase
             .from('turnos')
             .select('*')
@@ -83,7 +86,6 @@ if (Astro.request.method === 'POST') {
 
   } catch (error: any) {
     console.error("Error:", error);
-    // Si el error tiene un mensaje personalizado (como el de la hora), lo usamos
     mensajeError = error.message || "Error al procesar el turno.";
   }
 }
@@ -92,7 +94,7 @@ if (Astro.request.method === 'POST') {
 <Layout title="Reservar Turno | Ezequiel Marin">
     <main class="app-wrapper">
         <div class="brand-header">
-            <h1>BARBERÍA MARIN</h1>
+            <h1>BARBERÍA EZEQUIEL MARIN</h1>
             <p>Reserva tu lugar exclusivo</p>
         </div>
 

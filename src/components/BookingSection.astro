@@ -93,21 +93,45 @@ const { errorBackend } = Astro.props;
                 const fechaElegida = selectedDates[0];
                 const diaSemana = fechaElegida.getDay();
                 const configDia = horarios[diaSemana];
-                const ahora = new Date();
-                const esHoy = fechaElegida.toDateString() === ahora.toDateString();
-                const horaActual = ahora.getHours();
+                const ahora = new Date(); // Fecha y hora actual completa
 
                 if (configDia) {
                     selectHora.disabled = false;
+                    
+                    // Recorremos las horas desde inicio hasta fin
                     for (let h = configDia.inicio; h <= configDia.fin; h++) {
-                        if (esHoy && h <= horaActual) continue;
+                        
+                        // Generamos los minutos: 00 y 30
+                        const minutosPosibles = ['00', '30'];
 
-                        const horaTexto = `${h}:00`;
-                        const option = document.createElement('option');
-                        option.value = horaTexto;
-                        option.textContent = horaTexto;
-                        selectHora.appendChild(option);
+                        for (let m of minutosPosibles) {
+                            // Regla especial: Si es la hora de cierre, solo permitimos :00 (o lo excluimos si cierra a esa hora en punto)
+                            // Supongamos que "fin: 19" significa que a las 19:00 es el ULTIMO turno.
+                            // Entonces 19:30 ya no se debe mostrar.
+                            if (h === configDia.fin && m === '30') {
+                                continue; 
+                            }
+
+                            // Creamos la fecha exacta de este turno candidato para compararla con "ahora"
+                            const horaTexto = `${h}:${m}`;
+                            const fechaCandidata = new Date(fechaElegida);
+                            fechaCandidata.setHours(h);
+                            fechaCandidata.setMinutes(parseInt(m));
+                            fechaCandidata.setSeconds(0);
+
+                            // Si el turno ya pasó (es anterior a ahora), lo saltamos
+                            if (fechaCandidata < ahora) {
+                                continue;
+                            }
+
+                            // Si pasó todas las pruebas, lo agregamos
+                            const option = document.createElement('option');
+                            option.value = horaTexto;
+                            option.textContent = horaTexto;
+                            selectHora.appendChild(option);
+                        }
                     }
+
                     if (selectHora.options.length === 1) {
                         const option = document.createElement('option');
                         option.text = "Sin cupo hoy";
@@ -121,158 +145,34 @@ const { errorBackend } = Astro.props;
 </script>
 
 <style>
-    /* --- ESTILOS DE LA TARJETA (RECUPERADOS) --- */
-    .card-form {
-        background-color: rgba(255, 255, 255, 0.05);
-        border: 1px solid rgba(242, 240, 230, 0.1);
-        padding: 30px;
-        border-radius: 16px;
-        width: 100%;
-        max-width: 450px;
-        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
-    }
+    /* ... (MANTENEMOS TUS ESTILOS INTACTOS) ... */
+    .card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+    .mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
+    .row-group { display: flex; gap: 15px; margin-bottom: 20px; }
+    .full-width { width: 100%; margin-bottom: 20px; }
+    .field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+    label { color: var(--color-bg-beige); font-size: 0.7rem; font-weight: bold; opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
+    
+    /* INPUTS OSCUROS */
+    .input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: var(--color-bg-beige); font-size: 0.95rem; border-radius: 10px; outline: none; transition: 0.2s ease-in-out; font-family: var(--font-body); }
+    .input-app:focus { border-color: var(--color-bg-beige); background-color: rgba(0, 0, 0, 0.5); transform: translateY(-1px); }
+    .input-app.centered { text-align: center; }
+    .input-app::placeholder { color: rgba(242, 240, 230, 0.3); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
+    select option { background-color: #222; color: #fff; }
+    
+    .btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: var(--color-bg-beige); color: var(--color-text-black); border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1); }
+    .btn-app:hover { background-color: #fff; transform: scale(1.02); }
+    @media (max-width: 480px) { .row-group { flex-direction: column; gap: 20px; } }
 
-    .mensaje-alerta.error {
-        background-color: #3b1215;
-        color: #ff8a8a;
-        border: 1px solid #63181d;
-        padding: 10px;
-        margin-bottom: 20px;
-        border-radius: 8px;
-        font-size: 0.9rem;
-        text-align: center;
-    }
-
-    .row-group {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-    }
-
-    .full-width {
-        width: 100%;
-        margin-bottom: 20px;
-    }
-
-    .field-wrapper {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    label {
-        color: var(--color-bg-beige);
-        font-size: 0.7rem;
-        font-weight: bold;
-        opacity: 0.6;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
-        margin-left: 5px;
-    }
-
-    /* ESTILO DE LOS INPUTS (LO QUE SE TE BORRÓ) */
-    .input-app {
-        width: 100%;
-        padding: 14px 16px;
-        background-color: rgba(0, 0, 0, 0.3); /* Fondo oscuro transparente */
-        border: 1px solid rgba(242, 240, 230, 0.15); /* Borde sutil */
-        color: var(--color-bg-beige); /* Texto dorado */
-        font-size: 0.95rem;
-        border-radius: 10px;
-        outline: none;
-        transition: 0.2s ease-in-out;
-        font-family: var(--font-body);
-    }
-
-    .input-app:focus {
-        border-color: var(--color-bg-beige);
-        background-color: rgba(0, 0, 0, 0.5);
-        transform: translateY(-1px);
-    }
-
-    .input-app.centered {
-        text-align: center;
-    }
-
-    .input-app::placeholder {
-        color: rgba(242, 240, 230, 0.3);
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-    }
-
-    select option {
-        background-color: #222;
-        color: #fff;
-    }
-
-    .btn-app {
-        width: 100%;
-        padding: 18px;
-        margin-top: 10px;
-        background-color: var(--color-bg-beige);
-        color: var(--color-text-black);
-        border: none;
-        border-radius: 50px;
-        font-weight: 800;
-        font-size: 1rem;
-        letter-spacing: 2px;
-        cursor: pointer;
-        transition: transform 0.2s;
-        text-transform: uppercase;
-        box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1);
-    }
-
-    .btn-app:hover {
-        background-color: #fff;
-        transform: scale(1.02);
-    }
-
-    @media (max-width: 480px) {
-        .row-group {
-            flex-direction: column;
-            gap: 20px;
-        }
-    }
-
-    /* --- ESTILOS DEL CALENDARIO FLATPICKR --- */
-    :global(.flatpickr-calendar) {
-        background: #1a1a1a !important;
-        border: 1px solid rgba(242, 240, 230, 0.2) !important;
-        box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important;
-    }
-    :global(.flatpickr-months .flatpickr-month) {
-        background: #1a1a1a !important;
-        color: var(--color-bg-beige) !important;
-        fill: var(--color-bg-beige) !important;
-    }
-    :global(.flatpickr-current-month .flatpickr-monthDropdown-months) {
-        background: #1a1a1a !important;
-    }
-    :global(.flatpickr-weekdays) {
-        background: #1a1a1a !important;
-    }
-    :global(span.flatpickr-weekday) {
-        color: rgba(242, 240, 230, 0.6) !important;
-    }
-    :global(.flatpickr-day) {
-        color: var(--color-bg-beige) !important;
-    }
-    :global(.flatpickr-day:hover) {
-        background: rgba(242, 240, 230, 0.2) !important;
-        border-color: transparent !important;
-    }
-    :global(.flatpickr-day.selected), :global(.flatpickr-day.startRange), :global(.flatpickr-day.endRange), :global(.flatpickr-day.selected.inRange), :global(.flatpickr-day.startRange.inRange), :global(.flatpickr-day.endRange.inRange), :global(.flatpickr-day.selected:focus), :global(.flatpickr-day.startRange:focus), :global(.flatpickr-day.endRange:focus), :global(.flatpickr-day.selected:hover), :global(.flatpickr-day.startRange:hover), :global(.flatpickr-day.endRange:hover), :global(.flatpickr-day.selected.prevMonthDay), :global(.flatpickr-day.startRange.prevMonthDay), :global(.flatpickr-day.endRange.prevMonthDay), :global(.flatpickr-day.selected.nextMonthDay), :global(.flatpickr-day.startRange.nextMonthDay), :global(.flatpickr-day.endRange.nextMonthDay) {
-        background: var(--color-bg-beige) !important;
-        color: var(--color-text-black) !important;
-        border-color: var(--color-bg-beige) !important;
-        font-weight: bold;
-    }
-    :global(.flatpickr-day.flatpickr-disabled), :global(.flatpickr-day.flatpickr-disabled:hover) {
-        color: rgba(255, 255, 255, 0.1) !important;
-    }
-    :global(.flatpickr-prev-month svg), :global(.flatpickr-next-month svg) {
-        fill: var(--color-bg-beige) !important;
-    }
+    /* ESTILOS FLATPICKR */
+    :global(.flatpickr-calendar) { background: #1a1a1a !important; border: 1px solid rgba(242, 240, 230, 0.2) !important; box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important; }
+    :global(.flatpickr-months .flatpickr-month) { background: #1a1a1a !important; color: var(--color-bg-beige) !important; fill: var(--color-bg-beige) !important; }
+    :global(.flatpickr-current-month .flatpickr-monthDropdown-months) { background: #1a1a1a !important; }
+    :global(.flatpickr-weekdays) { background: #1a1a1a !important; }
+    :global(span.flatpickr-weekday) { color: rgba(242, 240, 230, 0.6) !important; }
+    :global(.flatpickr-day) { color: var(--color-bg-beige) !important; }
+    :global(.flatpickr-day:hover) { background: rgba(242, 240, 230, 0.2) !important; border-color: transparent !important; }
+    :global(.flatpickr-day.selected), :global(.flatpickr-day.startRange), :global(.flatpickr-day.endRange), :global(.flatpickr-day.selected:hover) { background: var(--color-bg-beige) !important; color: var(--color-text-black) !important; border-color: var(--color-bg-beige) !important; font-weight: bold; }
+    :global(.flatpickr-day.flatpickr-disabled) { color: rgba(255, 255, 255, 0.1) !important; }
+    :global(.flatpickr-prev-month svg), :global(.flatpickr-next-month svg) { fill: var(--color-bg-beige) !important; }
 </style>
