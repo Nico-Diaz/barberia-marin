@@ -42,7 +42,7 @@ if (Astro.request.method === 'POST') {
         await supabase.from('turnos').delete().eq('id', idToDelete);
     }
 
-    // 3. CAMBIAR HORARIO (NUEVO)
+    // 3. CAMBIAR HORARIO
     const idToUpdate = formData.get('id');
     const nuevaHora = formData.get('nueva_hora');
     
@@ -72,9 +72,7 @@ const hoy = new Date().toLocaleDateString('es-AR', {
 }).split('/').reverse().join('-');
 
 // --- GENERAR LISTA DE HORARIOS (Cada 30 min) ---
-// Generamos de 10:00 a 21:00
-const horariosOpciones: string[] = []; 
-
+const horariosOpciones: string[] = [];
 for (let h = 10; h <= 21; h++) {
     horariosOpciones.push(`${h}:00`);
     if (h < 21) horariosOpciones.push(`${h}:30`);
@@ -113,7 +111,7 @@ for (let h = 10; h <= 21; h++) {
                         <tr>
                             <th>FECHA</th>
                             <th>HORARIO</th>
-                            <th>CLIENTE</th>
+                            <th>SERVICIO</th> <th>CLIENTE</th>
                             <th>CONTACTO</th>
                             <th>ACCIÓN</th>
                         </tr>
@@ -143,6 +141,12 @@ for (let h = 10; h <= 21; h++) {
                                     </form>
                                 </td>
 
+                                <td data-label="SERVICIO">
+                                    <span class="servicio-badge">
+                                        {turno.servicio || 'Sin especificar'}
+                                    </span>
+                                </td>
+
                                 <td data-label="CLIENTE" class="cliente-text">{turno.nombre} {turno.apellido}</td>
                                 <td data-label="CONTACTO">
                                     {turno.telefono ? (
@@ -151,7 +155,7 @@ for (let h = 10; h <= 21; h++) {
                                         </a>
                                     ) : <span class="no-data">-</span>}
                                 </td>
-                                <td  class="accion-td">
+                                <td class="accion-td">
                                     <form method="POST" id={`form-borrar-${turno.id}`}>
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="id" value={turno.id} />
@@ -177,7 +181,6 @@ for (let h = 10; h <= 21; h++) {
 <script>
     import Swal from 'sweetalert2';
 
-    // Lógica para el botón de borrar
     document.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const boton = target.closest('.accion-borrar');
@@ -208,7 +211,6 @@ for (let h = 10; h <= 21; h++) {
         }
     });
 
-    // Ocultar el toast de éxito después de 3 segundos
     const toast = document.querySelector('.toast-success');
     if (toast) {
         setTimeout(() => {
@@ -219,12 +221,11 @@ for (let h = 10; h <= 21; h++) {
 </script>
 
 <style>
-    /* ... (Estilos Generales) ... */
+    /* ... (ESTILOS GENERALES) ... */
     .admin-wrapper { min-height: 100vh; background-color: var(--color-text-black); padding: 40px 20px; color: var(--color-bg-beige); }
     .admin-header { max-width: 1000px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(242, 240, 230, 0.1); padding-bottom: 20px; }
     .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; text-transform: uppercase; }
     .titulo p { font-size: 0.9rem; opacity: 0.6; margin: 5px 0 0 0; }
-
     .btn-logout { background: rgba(255, 255, 255, 0.1); border: none; color: #fff; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.3s; }
     .btn-logout:hover { background: #d33; }
 
@@ -245,46 +246,20 @@ for (let h = 10; h <= 21; h++) {
     .btn-delete:hover { background: #ff6b6b; color: #fff; }
     .empty-state { padding: 50px; text-align: center; opacity: 0.5; }
 
-    /* ESTILOS DEL SELECT EDITABLE */
-    .select-hora {
-        background-color: rgba(0,0,0,0.3);
+    .select-hora { background-color: rgba(0,0,0,0.3); color: var(--color-bg-beige); border: 1px solid rgba(242, 240, 230, 0.2); padding: 8px; border-radius: 6px; font-family: var(--font-body); font-size: 0.9rem; cursor: pointer; outline: none; }
+    .select-hora:focus { border-color: var(--color-bg-beige); background-color: rgba(0,0,0,0.6); }
+
+    /* ESTILO SERVICIO */
+    .servicio-badge {
         color: var(--color-bg-beige);
-        border: 1px solid rgba(242, 240, 230, 0.2);
-        padding: 8px;
-        border-radius: 6px;
-        font-family: var(--font-body);
-        font-size: 0.9rem;
-        cursor: pointer;
-        outline: none;
-    }
-    .select-hora:focus {
-        border-color: var(--color-bg-beige);
-        background-color: rgba(0,0,0,0.6);
-    }
-
-    /* TOAST DE ÉXITO */
-    .toast-success {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background-color: #2ecc71;
-        color: #000;
-        padding: 12px 24px;
-        border-radius: 50px;
         font-weight: bold;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-        z-index: 1000;
-        animation: slideDown 0.3s ease-out;
-        transition: opacity 0.5s;
+        font-size: 0.9rem;
+        letter-spacing: 0.5px;
     }
 
-    @keyframes slideDown {
-        from { top: -50px; opacity: 0; }
-        to { top: 20px; opacity: 1; }
-    }
+    .toast-success { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background-color: #2ecc71; color: #000; padding: 12px 24px; border-radius: 50px; font-weight: bold; box-shadow: 0 5px 20px rgba(0,0,0,0.3); z-index: 1000; animation: slideDown 0.3s ease-out; transition: opacity 0.5s; }
+    @keyframes slideDown { from { top: -50px; opacity: 0; } to { top: 20px; opacity: 1; } }
 
-    /* RESPONSIVE */
     @media (max-width: 768px) {
         .admin-header { flex-direction: column; gap: 20px; text-align: center; }
         .table-container { background: transparent; box-shadow: none; border: none; }

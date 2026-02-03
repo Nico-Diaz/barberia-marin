@@ -1,4 +1,6 @@
 ---
+import { servicios, formatearPrecio } from '../config/servicios';
+
 interface Props {
     errorBackend?: string;
 }
@@ -20,6 +22,25 @@ const { errorBackend } = Astro.props;
 
     <form method="POST" class="booking-form">
         
+        <div class="services-grid">
+            {servicios.map((servicio, index) => (
+                <div class="service-item">
+                    <input 
+                        type="radio" 
+                        name="servicio" 
+                        id={servicio.id} 
+                        value={servicio.id} 
+                        required 
+                        checked={index === 0}
+                    >
+                    <label for={servicio.id} class="service-card">
+                        <span class="service-name">{servicio.nombre}</span>
+                        <span class="service-price">{formatearPrecio(servicio.precio)}</span>
+                    </label>
+                </div>
+            ))}
+        </div>
+
         <div class="row-group">
             <div class="field-wrapper">
                 <label>NOMBRE</label>
@@ -59,14 +80,11 @@ const { errorBackend } = Astro.props;
 <script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
 <script is:inline>
+    // ... (El script del calendario se mantiene IDÉNTICO, solo cambia el HTML de arriba) ...
     const horarios = {
-        0: null,                       // Domingo
-        1: { inicio: 10, fin: 19 },    // Lunes
-        2: { inicio: 10, fin: 20 },    // Martes
-        3: { inicio: 10, fin: 19 },    // Miércoles
-        4: { inicio: 10, fin: 20 },    // Jueves
-        5: { inicio: 10, fin: 19 },    // Viernes
-        6: { inicio: 11, fin: 21 },    // Sábado
+        0: null, 1: { inicio: 10, fin: 19 }, 2: { inicio: 10, fin: 20 },
+        3: { inicio: 10, fin: 19 }, 4: { inicio: 10, fin: 20 },
+        5: { inicio: 10, fin: 19 }, 6: { inicio: 11, fin: 21 },
     };
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -74,15 +92,8 @@ const { errorBackend } = Astro.props;
         const errorDiv = document.getElementById('js-error');
 
         flatpickr("#input-fecha", {
-            locale: "es",
-            minDate: "today",
-            dateFormat: "Y-m-d",
-            disableMobile: "true",
-            disable: [
-                function(date) {
-                    return (date.getDay() === 0);
-                }
-            ],
+            locale: "es", minDate: "today", dateFormat: "Y-m-d", disableMobile: "true",
+            disable: [ function(date) { return (date.getDay() === 0); } ],
             onChange: function(selectedDates, dateStr, instance) {
                 if (errorDiv) errorDiv.style.display = 'none';
                 selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
@@ -93,45 +104,29 @@ const { errorBackend } = Astro.props;
                 const fechaElegida = selectedDates[0];
                 const diaSemana = fechaElegida.getDay();
                 const configDia = horarios[diaSemana];
-                const ahora = new Date(); // Fecha y hora actual completa
+                const ahora = new Date();
 
                 if (configDia) {
                     selectHora.disabled = false;
-                    
-                    // Recorremos las horas desde inicio hasta fin
                     for (let h = configDia.inicio; h <= configDia.fin; h++) {
-                        
-                        // Generamos los minutos: 00 y 30
                         const minutosPosibles = ['00', '30'];
-
                         for (let m of minutosPosibles) {
-                            // Regla especial: Si es la hora de cierre, solo permitimos :00 (o lo excluimos si cierra a esa hora en punto)
-                            // Supongamos que "fin: 19" significa que a las 19:00 es el ULTIMO turno.
-                            // Entonces 19:30 ya no se debe mostrar.
-                            if (h === configDia.fin && m === '30') {
-                                continue; 
-                            }
+                            if (h === configDia.fin && m === '30') continue; 
 
-                            // Creamos la fecha exacta de este turno candidato para compararla con "ahora"
                             const horaTexto = `${h}:${m}`;
                             const fechaCandidata = new Date(fechaElegida);
                             fechaCandidata.setHours(h);
                             fechaCandidata.setMinutes(parseInt(m));
                             fechaCandidata.setSeconds(0);
 
-                            // Si el turno ya pasó (es anterior a ahora), lo saltamos
-                            if (fechaCandidata < ahora) {
-                                continue;
-                            }
+                            if (fechaCandidata < ahora) continue;
 
-                            // Si pasó todas las pruebas, lo agregamos
                             const option = document.createElement('option');
                             option.value = horaTexto;
                             option.textContent = horaTexto;
                             selectHora.appendChild(option);
                         }
                     }
-
                     if (selectHora.options.length === 1) {
                         const option = document.createElement('option');
                         option.text = "Sin cupo hoy";
@@ -145,7 +140,7 @@ const { errorBackend } = Astro.props;
 </script>
 
 <style>
-    /* ... (MANTENEMOS TUS ESTILOS INTACTOS) ... */
+    /* ... (Tus estilos anteriores se mantienen) ... */
     .card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
     .mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
     .row-group { display: flex; gap: 15px; margin-bottom: 20px; }
@@ -153,7 +148,6 @@ const { errorBackend } = Astro.props;
     .field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
     label { color: var(--color-bg-beige); font-size: 0.7rem; font-weight: bold; opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
     
-    /* INPUTS OSCUROS */
     .input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: var(--color-bg-beige); font-size: 0.95rem; border-radius: 10px; outline: none; transition: 0.2s ease-in-out; font-family: var(--font-body); }
     .input-app:focus { border-color: var(--color-bg-beige); background-color: rgba(0, 0, 0, 0.5); transform: translateY(-1px); }
     .input-app.centered { text-align: center; }
@@ -164,7 +158,7 @@ const { errorBackend } = Astro.props;
     .btn-app:hover { background-color: #fff; transform: scale(1.02); }
     @media (max-width: 480px) { .row-group { flex-direction: column; gap: 20px; } }
 
-    /* ESTILOS FLATPICKR */
+    /* ESTILOS FLATPICKR (Mantener) */
     :global(.flatpickr-calendar) { background: #1a1a1a !important; border: 1px solid rgba(242, 240, 230, 0.2) !important; box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important; }
     :global(.flatpickr-months .flatpickr-month) { background: #1a1a1a !important; color: var(--color-bg-beige) !important; fill: var(--color-bg-beige) !important; }
     :global(.flatpickr-current-month .flatpickr-monthDropdown-months) { background: #1a1a1a !important; }
@@ -175,4 +169,65 @@ const { errorBackend } = Astro.props;
     :global(.flatpickr-day.selected), :global(.flatpickr-day.startRange), :global(.flatpickr-day.endRange), :global(.flatpickr-day.selected:hover) { background: var(--color-bg-beige) !important; color: var(--color-text-black) !important; border-color: var(--color-bg-beige) !important; font-weight: bold; }
     :global(.flatpickr-day.flatpickr-disabled) { color: rgba(255, 255, 255, 0.1) !important; }
     :global(.flatpickr-prev-month svg), :global(.flatpickr-next-month svg) { fill: var(--color-bg-beige) !important; }
+
+    /* --- ESTILOS DE LOS BOTONES DE SERVICIO (NUEVO) --- */
+    .services-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        margin-bottom: 25px;
+    }
+
+    .service-item { position: relative; }
+    
+    /* Ocultamos el radio button original */
+    .service-item input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        cursor: pointer;
+    }
+
+    /* La tarjeta visual */
+    .service-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background-color: rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(242, 240, 230, 0.15);
+        border-radius: 12px;
+        padding: 15px;
+        cursor: pointer;
+        transition: 0.3s all;
+        height: 100%;
+    }
+
+    .service-name {
+        font-family: var(--font-titles);
+        font-size: 1.1rem;
+        letter-spacing: 1px;
+        margin-bottom: 5px;
+        text-align: center;
+    }
+
+    .service-price {
+        font-weight: bold;
+        color: rgba(242, 240, 230, 0.6);
+        font-size: 0.9rem;
+    }
+
+    /* ESTADO SELECCIONADO (CHECKED) */
+    /* Cuando el input está checked, cambiamos el estilo del label hermano */
+    .service-item input:checked + .service-card {
+        background-color: var(--color-bg-beige);
+        color: var(--color-text-black);
+        border-color: var(--color-bg-beige);
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(212, 175, 55, 0.2);
+    }
+
+    .service-item input:checked + .service-card .service-price {
+        color: #000;
+        font-weight: 800;
+    }
 </style>
