@@ -9,10 +9,10 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/db": "^0.18.3",
     "@astrojs/vercel": "^9.0.3",
     "@supabase/supabase-js": "^2.91.0",
     "astro": "^5.16.6",
+    "resend": "^6.9.1",
     "sweetalert2": "^11.26.17"
   }
 }
