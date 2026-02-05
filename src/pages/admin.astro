@@ -12,8 +12,6 @@ if (!accessToken || !refreshToken) return Astro.redirect('/login');
 
 const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken.value);
 if (authError || !user) {
-    Astro.cookies.delete("sb-access-token", { path: "/" });
-    Astro.cookies.delete("sb-refresh-token", { path: "/" });
     return Astro.redirect('/login');
 }
 
@@ -24,6 +22,7 @@ if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
     const action = formData.get('action');
 
+    // LOGOUT
     if (action === 'logout') {
         await supabase.auth.signOut();
         Astro.cookies.delete("sb-access-token", { path: "/" });
@@ -31,43 +30,55 @@ if (Astro.request.method === 'POST') {
         return Astro.redirect('/login');
     }
 
+    // BORRAR TURNO
     if (action === 'delete') {
         const idToDelete = formData.get('id');
         if (idToDelete) await supabase.from('turnos').delete().eq('id', idToDelete);
     }
 
+    // ACTUALIZAR HORA TURNO
     if (action === 'update_hora') {
         const idToUpdate = formData.get('id');
         const nuevaHora = formData.get('nueva_hora');
         if (idToUpdate && nuevaHora) {
-            await supabase.from('turnos').update({ hora: nuevaHora }).eq('id', idToUpdate);
-            mensajeExito = "Horario actualizado.";
+            const { error } = await supabase.from('turnos').update({ hora: nuevaHora }).eq('id', idToUpdate);
+            if (error) console.error("Error update turno:", error);
+            else mensajeExito = "Horario actualizado.";
         }
     }
 
-    // --- GUARDAR DÍA ESPECIAL (LÓGICA ACTUALIZADA PARA TEXTO) ---
+    // --- GUARDAR DÍA ESPECIAL (Debuggeado) ---
     if (action === 'save_day') {
         const fecha = formData.get('fecha_especial') as string;
         const tipo = formData.get('tipo_dia'); 
         
         if (fecha) {
             const esCerrado = tipo === 'cerrado';
-            // AHORA GUARDAMOS EL STRING DIRECTO (ej: "09:30")
-            const horaInicio = formData.get('hora_inicio') as string;
-            const horaFin = formData.get('hora_fin') as string;
+            let horaInicio = formData.get('hora_inicio') as string;
+            let horaFin = formData.get('hora_fin') as string;
 
-            const { error } = await supabase.from('dias_especiales').upsert({
+            // Limpieza de datos: si está cerrado o vacío, enviamos null
+            const payload = {
                 fecha,
                 cerrado: esCerrado,
-                hora_inicio: esCerrado ? null : horaInicio,
-                hora_fin: esCerrado ? null : horaFin
-            });
+                hora_inicio: (esCerrado || !horaInicio) ? null : horaInicio,
+                hora_fin: (esCerrado || !horaFin) ? null : horaFin
+            };
 
-            if (error) mensajeError = "Error al guardar configuración.";
-            else mensajeExito = "Regla guardada correctamente.";
+            console.log("Intentando guardar:", payload); // VER EN CONSOLA
+
+            const { error } = await supabase.from('dias_especiales').upsert(payload);
+
+            if (error) {
+                console.error("ERROR SUPABASE:", error); // <--- ESTO TE DIRÁ QUÉ PASA
+                mensajeError = `Error: ${error.message}`;
+            } else {
+                mensajeExito = "Regla guardada correctamente.";
+            }
         }
     }
 
+    // BORRAR DÍA ESPECIAL
     if (action === 'delete_day') {
         const fecha = formData.get('fecha_borrar');
         if (fecha) {
@@ -234,7 +245,7 @@ const listaDias = diasEspeciales || [];
 </script>
 
 <style>
-    /* ... (Mantén tus estilos CSS anteriores tal cual, son compatibles) ... */
+    /* ... (MANTENER TODOS LOS ESTILOS ANTERIORES) ... */
     .admin-wrapper { min-height: 100vh; background-color: var(--color-text-black); padding: 40px 20px; color: var(--color-bg-beige); }
     .admin-header { max-width: 1000px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(242, 240, 230, 0.1); padding-bottom: 20px; }
     .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; text-transform: uppercase; }
