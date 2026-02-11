@@ -2,8 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import BookingSection from '../components/BookingSection.astro';
 import { supabase } from '../lib/supabase';
-// Importamos la config de servicios para validar (seguridad extra)
-import { servicios } from '../config/servicios';
+// YA NO IMPORTAMOS 'servicios.ts' PORQUE USAMOS LA BASE DE DATOS
+import nodemailer from 'nodemailer';
 
 let mensajeError = "";
 
@@ -14,78 +14,105 @@ if (Astro.request.method === 'POST') {
   const fecha = formData.get('fecha') as string;
   const hora = formData.get('hora') as string;
   const telefono = formData.get('telefono') as string;
-  const servicioId = formData.get('servicio') as string; // Recibimos el ID (ej: 'corte')
+  const servicioId = formData.get('servicio') as string;
 
   const diaSemana = new Date(fecha + 'T00:00:00').getDay();
-  const [horaStr, minStr] = hora.split(':');
-  const horaNum = parseInt(horaStr);
 
   try {
-    // --- 0. VALIDAR SERVICIO ---
-    const servicioEncontrado = servicios.find(s => s.id === servicioId);
-    if (!servicioEncontrado) {
-        throw { message: "Por favor selecciona un servicio válido." };
+    // 1. VALIDAR SERVICIO (CORRECCIÓN AQUÍ)
+    // Buscamos el servicio directamente en la base de datos
+    const { data: servicioEncontrado, error: errorServicio } = await supabase
+        .from('servicios')
+        .select('*')
+        .eq('id', servicioId)
+        .single();
+
+    // Si no existe en la base de datos o dio error...
+    if (errorServicio || !servicioEncontrado) {
+        throw { message: "Por favor, seleccione un servicio válido." };
     }
-    // Guardamos el nombre bonito (ej: "Corte + Barba") en vez del ID
+    
     const nombreServicio = servicioEncontrado.nombre;
 
-    // --- 1. REGLA DE TIEMPO ---
+    // 2. VALIDACIÓN FECHA PASADA
     const ahora = new Date();
-    const fechaTurno = new Date(`${fecha}T${hora}:00-03:00`);
-
-    if (fechaTurno < ahora) {
-         throw { message: "No puedes reservar en un horario que ya pasó." };
-    }
-
-    // --- 2. REGLAS DE DÍAS Y HORARIOS ---
-    let esHorarioValido = false;
+    const fechaHoyStr = ahora.toISOString().split('T')[0];
+    if (fecha < fechaHoyStr) throw { message: "No puedes reservar en el pasado." };
     
-    if (diaSemana === 0) mensajeError = "Domingos cerrado.";
-    else if ([1, 3, 5].includes(diaSemana)) { // L-M-V
-        if (horaNum >= 10 && (horaNum < 19 || (horaNum === 19 && minStr === '00'))) esHorarioValido = true;
-        else mensajeError = "Lunes, Miércoles y Viernes: 10 a 19hs.";
-    } 
-    else if ([2, 4].includes(diaSemana)) { // M-J
-        if (horaNum >= 10 && (horaNum < 20 || (horaNum === 20 && minStr === '00'))) esHorarioValido = true;
-        else mensajeError = "Martes y Jueves: 10 a 20hs.";
-    } 
-    else if (diaSemana === 6) { // SAB
-        if (horaNum >= 11 && (horaNum < 21 || (horaNum === 21 && minStr === '00'))) esHorarioValido = true;
-        else mensajeError = "Sábados: 11 a 21hs.";
-    }
-
-    if (esHorarioValido && !mensajeError) {
-        const { data: turnosExistentes, error: errorSelect } = await supabase
-            .from('turnos')
-            .select('*')
-            .eq('fecha', fecha)
-            .eq('hora', hora);
-
-        if (errorSelect) throw errorSelect;
-
-        if (turnosExistentes && turnosExistentes.length > 0) {
-            mensajeError = `El horario de las ${hora} ya está ocupado.`;
-        } else {
-            // INSERTAMOS TAMBIÉN EL SERVICIO
-            const { error: errorInsert } = await supabase
-                .from('turnos')
-                .insert([{ 
-                    nombre, 
-                    apellido, 
-                    fecha, 
-                    hora, 
-                    telefono,
-                    servicio: nombreServicio // Guardamos "Corte de Pelo"
-                }]);
-
-            if (errorInsert) throw errorInsert;
-            
-            return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
+    if (fecha === fechaHoyStr) {
+        const horaActual = ahora.getHours();
+        const minActual = ahora.getMinutes();
+        const [hTurno, mTurno] = hora.split(':').map(Number);
+        if (hTurno < horaActual || (hTurno === horaActual && mTurno < minActual)) {
+             throw { message: "Ese horario ya pasó." };
         }
     }
 
+    // 3. VALIDACIÓN DÍAS Y HORARIOS
+    let esHorarioValido = false;
+    let inicioStr = ""; let finStr = ""; let mensajeRango = "";
+
+    const { data: reglaDia } = await supabase.from('dias_especiales').select('*').eq('fecha', fecha).single();
+
+    if (reglaDia) {
+        if (reglaDia.cerrado) mensajeError = "Lo sentimos, este día la barbería permanecerá cerrada.";
+        else { 
+            inicioStr = reglaDia.hora_inicio; 
+            finStr = reglaDia.hora_fin; 
+            mensajeRango = `Horario especial: ${inicioStr} a ${finStr}hs.`; 
+        }
+    } else {
+        if (diaSemana === 0) mensajeError = "Domingos cerrado.";
+        else if ([1, 3, 5].includes(diaSemana)) { inicioStr = "10:00"; finStr = "19:00"; mensajeRango = "Lun, Mie, Vie: 10 a 19hs."; } 
+        else if ([2, 4].includes(diaSemana)) { inicioStr = "10:00"; finStr = "20:00"; mensajeRango = "Mar, Jue: 10 a 20hs."; } 
+        else if (diaSemana === 6) { inicioStr = "11:00"; finStr = "21:00"; mensajeRango = "Sábados: 11 a 21hs."; }
+    }
+
+    if (!mensajeError && inicioStr && finStr) {
+        if (hora >= inicioStr && hora < finStr) esHorarioValido = true;
+        else mensajeError = mensajeRango;
+    }
+
+    if (esHorarioValido && !mensajeError) {
+        // 4. CHEQUEAR DUPLICADOS
+        const { data: turnosExistentes } = await supabase.from('turnos').select('*').eq('fecha', fecha).eq('hora', hora);
+        if (turnosExistentes && turnosExistentes.length > 0) throw { message: `El horario de las ${hora} ya está ocupado.` };
+
+        // 5. GUARDAR TURNO
+        const { error: errorInsert } = await supabase.from('turnos').insert([{ 
+            nombre, apellido, fecha, hora, telefono, servicio: nombreServicio 
+        }]);
+        if (errorInsert) throw errorInsert;
+
+        // 6. ENVIAR EMAIL
+        try {
+            const transporter = nodemailer.createTransport({ 
+                service: 'gmail', 
+                auth: { user: import.meta.env.GMAIL_USER, pass: import.meta.env.GMAIL_PASS } 
+            });
+
+            await transporter.sendMail({
+                from: `"Barbería Web" <${import.meta.env.GMAIL_USER}>`,
+                to: import.meta.env.GMAIL_USER, // O el mail del dueño
+                subject: `🔔 Nuevo Turno: ${nombre} ${apellido}`,
+                html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #ccc; border-radius: 10px;">
+                    <h2 style="color: #d4af37;">¡Nuevo Turno!</h2>
+                    <ul>
+                        <li><strong>Cliente:</strong> ${nombre} ${apellido}</li>
+                        <li><strong>Servicio:</strong> ${nombreServicio}</li>
+                        <li><strong>Fecha:</strong> ${fecha}</li>
+                        <li><strong>Hora:</strong> ${hora} hs</li>
+                        <li><strong>WhatsApp:</strong> <a href="https://wa.me/${telefono}">${telefono}</a></li>
+                    </ul>
+                </div>`
+            });
+        } catch (e) { console.error("Error email:", e); }
+            
+        return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
+    }
+
   } catch (error: any) {
-    console.error("Error:", error);
+    console.error(error);
     mensajeError = error.message || "Error al procesar el turno.";
   }
 }
@@ -108,11 +135,10 @@ if (Astro.request.method === 'POST') {
 </Layout>
 
 <style>
-    /* ... (Estilos iguales) ... */
-    .app-wrapper { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: var(--color-text-black); padding: 20px; }
-    .brand-header { text-align: center; margin-bottom: 30px; color: var(--color-bg-beige); }
-    .brand-header h1 { font-family: var(--font-titles); font-size: 2.5rem; letter-spacing: 2px; margin: 0; }
-    .brand-header p { font-size: 0.9rem; opacity: 0.7; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+    .app-wrapper { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; align-items: center; background-color: #121212; padding: 20px; font-family: 'Montserrat', sans-serif; }
+    .brand-header { text-align: center; margin-bottom: 30px; color: #d4af37; }
+    .brand-header h1 { font-family: 'Bebas Neue', sans-serif; font-size: 2.5rem; letter-spacing: 2px; margin: 0; }
+    .brand-header p { font-size: 0.9rem; opacity: 0.7; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; color: #fff; }
     .mini-footer { margin-top: 40px; text-align: center; color: rgba(242, 240, 230, 0.3); font-size: 0.8rem; }
     .admin-link { text-decoration: none; color: inherit; font-size: 0.8rem; margin-top: 5px; display: inline-block; opacity: 0.5; }
 </style>

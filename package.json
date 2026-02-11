@@ -13,6 +13,7 @@
     "@astrojs/vercel": "^9.0.3",
     "@supabase/supabase-js": "^2.91.0",
     "astro": "^5.16.6",
+    "nodemailer": "^8.0.1",
     "sweetalert2": "^11.26.17"
   }
 }
