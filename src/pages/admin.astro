@@ -8,27 +8,20 @@ Astro.response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate
 // --- SEGURIDAD ---
 const accessToken = Astro.cookies.get("sb-access-token");
 const refreshToken = Astro.cookies.get("sb-refresh-token");
-
-if (!accessToken || !refreshToken) {
-    return Astro.redirect('/login');
-}
+if (!accessToken || !refreshToken) return Astro.redirect('/login');
 
 const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken.value);
+if (authError || !user) return Astro.redirect('/login');
 
-if (authError || !user) {
-    Astro.cookies.delete("sb-access-token", { path: "/" });
-    Astro.cookies.delete("sb-refresh-token", { path: "/" });
-    return Astro.redirect('/login');
-}
+let mensajeExito = "";
+let mensajeError = "";
 
 // --- LÓGICA DE ACCIONES (POST) ---
-let mensajeExito = "";
-
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
     const action = formData.get('action');
 
-    // 1. CERRAR SESIÓN
+    // 1. LOGOUT
     if (action === 'logout') {
         await supabase.auth.signOut();
         Astro.cookies.delete("sb-access-token", { path: "/" });
@@ -36,137 +29,162 @@ if (Astro.request.method === 'POST') {
         return Astro.redirect('/login');
     }
 
-    // 2. ELIMINAR TURNO
-    const idToDelete = formData.get('id');
-    if (idToDelete && action === 'delete') {
-        await supabase.from('turnos').delete().eq('id', idToDelete);
-    }
-
-    // 3. CAMBIAR HORARIO
-    const idToUpdate = formData.get('id');
-    const nuevaHora = formData.get('nueva_hora');
-    
-    if (action === 'update_hora' && idToUpdate && nuevaHora) {
-        const { error } = await supabase
-            .from('turnos')
-            .update({ hora: nuevaHora })
-            .eq('id', idToUpdate);
-            
-        if (!error) {
-            mensajeExito = "Horario actualizado correctamente.";
+    // 2. ACTUALIZAR PRECIO
+    if (action === 'update_price') {
+        const idServicio = formData.get('id_servicio');
+        const nuevoPrecio = formData.get('nuevo_precio');
+        if (idServicio && nuevoPrecio) {
+            const { error } = await supabase.from('servicios').update({ precio: nuevoPrecio }).eq('id', idServicio);
+            if (error) mensajeError = "Error al actualizar precio.";
+            else mensajeExito = "Precio actualizado.";
         }
     }
+
+    // 3. NUEVO: AGREGAR SERVICIO
+    if (action === 'add_service') {
+        const nombre = formData.get('new_nombre') as string;
+        const precio = formData.get('new_precio');
+        
+        if (nombre && precio) {
+            // Creamos un ID automático simple basado en el nombre (ej: "Corte Niño" -> "corte-nino")
+            const id = nombre.toLowerCase().replace(/ /g, '-').normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            
+            const { error } = await supabase.from('servicios').insert([{ id, nombre, precio }]);
+            if (error) mensajeError = "Error: Ya existe un servicio con ese nombre o ID.";
+            else mensajeExito = "Servicio agregado correctamente.";
+        }
+    }
+
+    // 4. NUEVO: BORRAR SERVICIO
+    if (action === 'delete_service') {
+        const idToDelete = formData.get('id_servicio');
+        if (idToDelete) {
+            const { error } = await supabase.from('servicios').delete().eq('id', idToDelete);
+            if (error) mensajeError = "Error al borrar servicio.";
+            else mensajeExito = "Servicio eliminado.";
+        }
+    }
+
+    // 5. GESTIÓN TURNOS (Borrar/Actualizar)
+    if (action === 'delete') {
+        const id = formData.get('id');
+        if (id) await supabase.from('turnos').delete().eq('id', id);
+    }
+    if (action === 'update_hora') {
+        const id = formData.get('id');
+        const hora = formData.get('nueva_hora');
+        if (id && hora) await supabase.from('turnos').update({ hora }).eq('id', id);
+    }
+
+    // 6. DÍAS ESPECIALES
+    if (action === 'save_day') {
+        const fecha = formData.get('fecha_especial') as string;
+        const tipo = formData.get('tipo_dia'); 
+        if (fecha) {
+            const esCerrado = tipo === 'cerrado';
+            let horaInicio = formData.get('hora_inicio') as string;
+            let horaFin = formData.get('hora_fin') as string;
+            const payload = { fecha, cerrado: esCerrado, hora_inicio: (esCerrado || !horaInicio) ? null : horaInicio, hora_fin: (esCerrado || !horaFin) ? null : horaFin };
+            await supabase.from('dias_especiales').upsert(payload);
+            mensajeExito = "Regla guardada.";
+        }
+    }
+    if (action === 'delete_day') {
+        const fecha = formData.get('fecha_borrar');
+        if (fecha) await supabase.from('dias_especiales').delete().eq('fecha', fecha);
+    }
 }
 
-// --- CARGAR DATOS ---
-const { data: turnos } = await supabase
-    .from('turnos')
-    .select('*')
-    .order('fecha', { ascending: true })
-    .order('hora', { ascending: true });
-
+// CARGA DE DATOS
+const hoy = new Date().toLocaleDateString('es-AR', { year: 'numeric', month: '2-digit', day: '2-digit' }).split('/').reverse().join('-');
+const { data: turnos } = await supabase.from('turnos').select('*').order('fecha', { ascending: true }).order('hora', { ascending: true });
 const listaTurnos = turnos || [];
-
-const hoy = new Date().toLocaleDateString('es-AR', { 
-    year: 'numeric', month: '2-digit', day: '2-digit' 
-}).split('/').reverse().join('-');
-
-// --- GENERAR LISTA DE HORARIOS (Cada 30 min) ---
-const horariosOpciones: string[] = [];
-for (let h = 10; h <= 21; h++) {
-    horariosOpciones.push(`${h}:00`);
-    if (h < 21) horariosOpciones.push(`${h}:30`);
-}
+const { data: diasEspeciales } = await supabase.from('dias_especiales').select('*').gte('fecha', hoy).order('fecha', { ascending: true });
+const listaDias = diasEspeciales || [];
+const { data: serviciosDB } = await supabase.from('servicios').select('*').order('precio', { ascending: true });
+const listaServicios = serviciosDB || [];
 ---
 
 <Layout title="Admin | Barbería Ezequiel Marin">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+
     <div class="admin-wrapper">
-        
         <header class="admin-header">
-            <div class="titulo">
-                <h1>BARBERÍA EZEQUIEL MARIN</h1>
-                <p>Panel de Administración</p>
-            </div>
-            
-            <form method="POST">
-                <input type="hidden" name="action" value="logout">
-                <button type="submit" class="btn-logout">
-                    SALIR
-                </button>
-            </form>
+            <div class="titulo"><h1>BARBERÍA EZEQUIEL MARIN</h1><p>Panel de Administración</p></div>
+            <form method="POST"><input type="hidden" name="action" value="logout"><button type="submit" class="btn-logout">SALIR</button></form>
         </header>
 
-        {mensajeExito && (
-            <div class="toast-success">{mensajeExito}</div>
-        )}
+        {mensajeExito && <div class="toast-success">{mensajeExito}</div>}
+        {mensajeError && <div class="toast-error">{mensajeError}</div>}
+        
+        <h2 class="section-title">💰 Servicios y Precios</h2>
+        
+        <div class="add-service-container">
+            <form method="POST" class="add-service-form">
+                <input type="hidden" name="action" value="add_service">
+                <input type="text" name="new_nombre" placeholder="Nombre (Ej: Perfilado)" required class="input-admin small">
+                <input type="number" name="new_precio" placeholder="Precio (Ej: 3000)" required class="input-admin small">
+                <button type="submit" class="btn-add-service">+ AGREGAR</button>
+            </form>
+        </div>
 
-        <div class="table-container">
-            {listaTurnos.length === 0 ? (
-                <div class="empty-state">
-                    <p>No hay turnos registrados todavía.</p>
+        <div class="cards-grid">
+            {listaServicios.map(serv => (
+                <div class="price-card">
+                    <form method="POST" class="delete-service-form" onsubmit="return confirm('¿Borrar este servicio?');">
+                        <input type="hidden" name="action" value="delete_service">
+                        <input type="hidden" name="id_servicio" value={serv.id}>
+                        <button type="submit" class="btn-x-delete" title="Borrar servicio">×</button>
+                    </form>
+
+                    <span class="price-title">{serv.nombre}</span>
+                    <form method="POST" class="price-form">
+                        <input type="hidden" name="action" value="update_price">
+                        <input type="hidden" name="id_servicio" value={serv.id}>
+                        <div class="price-input-wrapper">
+                            <span>$</span>
+                            <input type="number" name="nuevo_precio" value={serv.precio} class="input-price">
+                        </div>
+                        <button type="submit" class="btn-update-price">ACTUALIZAR</button>
+                    </form>
                 </div>
-            ) : (
+            ))}
+        </div>
+
+        <hr class="divider" />
+
+        <h2 class="section-title">📅 Próximos Turnos</h2>
+        <div class="table-container">
+            {listaTurnos.length === 0 ? <div class="empty-state"><p>No hay turnos registrados.</p></div> : (
                 <table class="responsive-table">
-                    <thead>
-                        <tr>
-                            <th>FECHA</th>
-                            <th>HORARIO</th>
-                            <th>SERVICIO</th> <th>CLIENTE</th>
-                            <th>CONTACTO</th>
-                            <th>ACCIÓN</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>FECHA</th><th>HORARIO</th><th>SERVICIO</th><th>CLIENTE</th><th>WHATSAPP</th><th>ACCIÓN</th></tr></thead>
                     <tbody>
                         {listaTurnos.map((turno) => (
                             <tr class={turno.fecha === hoy ? "es-hoy" : ""}>
-                                <td data-label="FECHA">
-                                    <div class="fecha-celda">
-                                        {turno.fecha.split('-').reverse().join('/')}
-                                        {turno.fecha === hoy && <span class="badge-hoy">HOY</span>}
-                                    </div>
-                                </td>
-                                
+                                <td data-label="FECHA"><div class="fecha-celda">{turno.fecha.split('-').reverse().join('/')}{turno.fecha === hoy && <span class="badge-hoy">HOY</span>}</div></td>
                                 <td data-label="HORARIO">
                                     <form method="POST" class="form-cambio-hora">
-                                        <input type="hidden" name="action" value="update_hora">
-                                        <input type="hidden" name="id" value={turno.id}>
-                                        
-                                        <select name="nueva_hora" onchange="this.form.submit()" class="select-hora">
-                                            {horariosOpciones.map((h) => (
-                                                <option value={h} selected={h === turno.hora}>
-                                                    {h} hs
-                                                </option>
-                                            ))}
-                                        </select>
+                                        <input type="hidden" name="action" value="update_hora"><input type="hidden" name="id" value={turno.id}>
+                                        <div class="hora-input-wrapper">
+                                            <input type="time" name="nueva_hora" value={turno.hora} class="input-time-admin" required />
+                                            <button type="submit" class="btn-save-time" title="Guardar">✓</button>
+                                        </div>
                                     </form>
                                 </td>
-
-                                <td data-label="SERVICIO">
-                                    <span class="servicio-badge">
-                                        {turno.servicio || 'Sin especificar'}
-                                    </span>
-                                </td>
-
+                                <td data-label="SERVICIO"><span class="servicio-badge">{turno.servicio || '-'}</span></td>
                                 <td data-label="CLIENTE" class="cliente-text">{turno.nombre} {turno.apellido}</td>
-                                <td data-label="CONTACTO">
+                                <td data-label="WHATSAPP">
                                     {turno.telefono ? (
                                         <a href={`https://wa.me/${turno.telefono}`} target="_blank" class="whatsapp-btn">
-                                            WhatsApp
+                                            <span class="wa-icon">📞</span> WhatsApp
                                         </a>
-                                    ) : <span class="no-data">-</span>}
+                                    ) : '-'}
                                 </td>
-                                <td class="accion-td">
+                                <td data-label="ACCIÓN">
                                     <form method="POST" id={`form-borrar-${turno.id}`}>
-                                        <input type="hidden" name="action" value="delete">
-                                        <input type="hidden" name="id" value={turno.id} />
-                                        <button 
-                                            type="button" 
-                                            class="btn-delete accion-borrar"
-                                            data-id={turno.id}
-                                            data-nombre={`${turno.nombre} ${turno.apellido}`}
-                                        >
-                                            Eliminar
-                                        </button>
+                                        <input type="hidden" name="action" value="delete"><input type="hidden" name="id" value={turno.id} />
+                                        <button type="button" class="btn-small-delete accion-borrar" data-id={turno.id} data-nombre={`${turno.nombre} ${turno.apellido}`}>BORRAR</button>
                                     </form>
                                 </td>
                             </tr>
@@ -175,102 +193,278 @@ for (let h = 10; h <= 21; h++) {
                 </table>
             )}
         </div>
+
+        <hr class="divider" />
+
+        <h2 class="section-title">⚙️ Gestionar Días y Horarios</h2>
+        <div class="card-config">
+            <form method="POST" class="form-config">
+                <input type="hidden" name="action" value="save_day">
+                <div class="config-row">
+                    <div class="input-group">
+                        <label>Fecha</label>
+                        <input type="text" id="admin-fecha-picker" name="fecha_especial" required placeholder="Seleccionar..." class="input-admin" readonly>
+                    </div>
+                    <div class="input-group">
+                        <label>Acción</label>
+                        <select name="tipo_dia" id="tipoSelect" class="input-admin" onchange="toggleHorarios(this.value)">
+                            <option value="cerrado">🔒 Cerrar Día</option>
+                            <option value="personalizado">⏰ Cambiar Horario</option>
+                        </select>
+                    </div>
+                    <div id="horariosInputs" class="horarios-group" style="display:none;">
+                        <div class="input-group"><label>Apertura</label><input type="time" name="hora_inicio" class="input-admin"></div>
+                        <div class="input-group"><label>Cierre</label><input type="time" name="hora_fin" class="input-admin"></div>
+                    </div>
+                    <button type="submit" class="btn-save">GUARDAR REGLA</button>
+                </div>
+            </form>
+            <div class="lista-dias-especiales">
+                {listaDias.map(dia => (
+                    <div class="dia-card">
+                        <span class="dia-fecha">{dia.fecha.split('-').reverse().join('/')}</span>
+                        <span class={`dia-estado ${dia.cerrado ? 'cerrado' : 'abierto'}`}>
+                            {dia.cerrado ? 'CERRADO' : `⏰ ${dia.hora_inicio} - ${dia.hora_fin}`}
+                        </span>
+                        <form method="POST" style="margin-top: 5px;">
+                            <input type="hidden" name="action" value="delete_day"><input type="hidden" name="fecha_borrar" value={dia.fecha}>
+                            <button type="submit" class="btn-small-delete">BORRAR</button>
+                        </form>
+                    </div>
+                ))}
+            </div>
+        </div>
     </div>
 </Layout>
 
+<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 <script>
     import Swal from 'sweetalert2';
-
+    declare global { interface Window { toggleHorarios: (valor: string) => void; } }
+    document.addEventListener('DOMContentLoaded', function() {
+        // @ts-ignore
+        flatpickr("#admin-fecha-picker", { locale: "es", minDate: "today", dateFormat: "Y-m-d", disableMobile: "true" });
+    });
+    window.toggleHorarios = (valor: string) => {
+        const div = document.getElementById('horariosInputs');
+        if (div) div.style.display = (valor === 'personalizado') ? 'flex' : 'none';
+    }
     document.addEventListener('click', (e) => {
         const target = e.target as HTMLElement;
         const boton = target.closest('.accion-borrar');
-        
         if (boton) {
             const id = boton.getAttribute('data-id');
             const nombre = boton.getAttribute('data-nombre');
             const form = document.getElementById(`form-borrar-${id}`) as HTMLFormElement;
-
-            if (form) {
-                Swal.fire({
-                    title: '¿Eliminar turno?',
-                    text: `Vas a borrar el turno de ${nombre}.`,
-                    icon: 'warning',
-                    background: '#1a1a1a',
-                    color: '#fff',
-                    showCancelButton: true,
-                    confirmButtonColor: '#d33',
-                    cancelButtonColor: '#444',
-                    confirmButtonText: 'Sí, borrar',
-                    cancelButtonText: 'Cancelar'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        form.submit();
-                    }
-                });
-            }
+            if (form) Swal.fire({ title: '¿Eliminar?', text: `${nombre}`, icon: 'warning', background: '#1a1a1a', color: '#fff', showCancelButton: true, confirmButtonColor: '#d33', confirmButtonText: 'Sí, borrar' }).then((r) => { if (r.isConfirmed) form.submit(); });
         }
     });
-
     const toast = document.querySelector('.toast-success');
-    if (toast) {
-        setTimeout(() => {
-            (toast as HTMLElement).style.opacity = '0';
-            setTimeout(() => toast.remove(), 500);
-        }, 3000);
-    }
+    if (toast) setTimeout(() => { (toast as HTMLElement).style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 3000);
 </script>
 
 <style>
-    /* ... (ESTILOS GENERALES) ... */
-    .admin-wrapper { min-height: 100vh; background-color: var(--color-text-black); padding: 40px 20px; color: var(--color-bg-beige); }
-    .admin-header { max-width: 1000px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(242, 240, 230, 0.1); padding-bottom: 20px; }
-    .titulo h1 { font-family: var(--font-titles); font-size: 1.8rem; margin: 0; letter-spacing: 1px; text-transform: uppercase; }
-    .titulo p { font-size: 0.9rem; opacity: 0.6; margin: 5px 0 0 0; }
-    .btn-logout { background: rgba(255, 255, 255, 0.1); border: none; color: #fff; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 0.8rem; font-weight: bold; transition: 0.3s; }
+    /* GENERALES */
+    .admin-wrapper { min-height: 100vh; background-color: #121212; padding: 40px 20px; color: #d4af37; font-family: 'Montserrat', sans-serif; }
+    .admin-header { max-width: 1200px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(242, 240, 230, 0.1); padding-bottom: 20px; }
+    .titulo h1 { font-family: 'Bebas Neue', sans-serif; font-size: 1.8rem; margin: 0; letter-spacing: 1px; }
+    .titulo p { font-size: 0.9rem; opacity: 0.6; color: #fff; margin-top: 5px; }
+    .btn-logout { background: rgba(255, 255, 255, 0.1); border: none; color: #fff; padding: 10px 16px; border-radius: 8px; cursor: pointer; font-weight: bold; }
     .btn-logout:hover { background: #d33; }
+    
+    /* TÍTULOS DE SECCIÓN */
+    .section-title { max-width: 1200px; margin: 30px auto 20px; font-size: 1.2rem; border-left: 4px solid #d4af37; padding-left: 10px; color: #fff; text-transform: uppercase; letter-spacing: 1px; }
+    .divider { border: 0; border-top: 1px solid rgba(255,255,255,0.1); margin: 40px auto; max-width: 1200px; }
 
-    .table-container { max-width: 1000px; margin: 0 auto; background-color: rgba(255, 255, 255, 0.03); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); border: 1px solid rgba(255, 255, 255, 0.05); }
-    table { width: 100%; border-collapse: collapse; font-family: var(--font-body); }
-    th { text-align: left; padding: 18px; background-color: rgba(0, 0, 0, 0.4); font-size: 0.75rem; letter-spacing: 1px; color: rgba(242, 240, 230, 0.5); font-weight: bold; }
-    td { padding: 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); vertical-align: middle; }
+    /* --- GESTIÓN DE SERVICIOS --- */
+    .add-service-container { max-width: 1200px; margin: 0 auto 20px; background: rgba(255,255,255,0.03); padding: 15px; border-radius: 10px; border: 1px dashed rgba(212, 175, 55, 0.3); }
+    .add-service-form { display: flex; gap: 10px; flex-wrap: wrap; }
+    .input-admin.small { padding: 10px; flex: 1; min-width: 150px; }
+    .btn-add-service { background: #2ecc71; color: #000; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+    .btn-add-service:hover { background: #fff; }
 
-    .es-hoy { background-color: rgba(46, 204, 113, 0.08); }
+    .cards-grid { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px; }
+    .price-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; text-align: center; position: relative; }
+    
+    /* Botón X para borrar servicio */
+    .btn-x-delete { position: absolute; top: 5px; right: 5px; background: transparent; border: none; color: #666; font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 5px; }
+    .btn-x-delete:hover { color: #d33; }
+
+    .price-title { display: block; color: #fff; font-weight: bold; margin-bottom: 10px; margin-top: 5px; font-size: 1.1rem; }
+    .price-input-wrapper { display: flex; align-items: center; justify-content: center; gap: 5px; margin-bottom: 10px; }
+    .input-price { background: transparent; border: none; border-bottom: 1px solid #d4af37; color: #d4af37; width: 80px; text-align: center; font-size: 1.2rem; font-weight: bold; outline: none; }
+    .btn-update-price { background: #d4af37; color: #000; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 0.8rem; width: 100%; }
+    .btn-update-price:hover { background: #fff; }
+
+    /* --- TABLA DE TURNOS (ANCHO TOTAL) --- */
+    .table-container { 
+        width: 100%; 
+        max-width: 1200px; /* Un poco más ancho para pantallas grandes */
+        margin: 0 auto; 
+        background: rgba(255, 255, 255, 0.03); 
+        border-radius: 12px; 
+        overflow-x: auto; 
+    }
+    table { width: 100%; border-collapse: collapse; min-width: 600px; /* Evita que se aplaste en móviles */ }
+    th { text-align: left; padding: 18px; background: rgba(0, 0, 0, 0.4); font-size: 0.75rem; letter-spacing: 1px; color: rgba(242, 240, 230, 0.5); text-transform: uppercase; }
+    td { padding: 18px; border-bottom: 1px solid rgba(255, 255, 255, 0.05); color: #eee; vertical-align: middle; }
+    .es-hoy { background: rgba(46, 204, 113, 0.08); }
     .es-hoy td:first-child { border-left: 4px solid #2ecc71; }
-    .badge-hoy { background-color: #2ecc71; color: #000; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 8px; vertical-align: middle; }
+    .badge-hoy { background: #2ecc71; color: #000; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: bold; margin-left: 8px; }
 
-    .cliente-text { text-transform: capitalize; color: #eee; }
-    .no-data { opacity: 0.3; }
-    .whatsapp-btn { color: #25D366; text-decoration: none; font-size: 0.85rem; font-weight: bold; border: 1px solid rgba(37, 211, 102, 0.3); padding: 6px 12px; border-radius: 50px; transition: 0.2s; display: inline-block; }
-    .whatsapp-btn:hover { background-color: #25D366; color: #000; }
-    .btn-delete { background: transparent; color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; transition: 0.2s; }
-    .btn-delete:hover { background: #ff6b6b; color: #fff; }
-    .empty-state { padding: 50px; text-align: center; opacity: 0.5; }
-
-    .select-hora { background-color: rgba(0,0,0,0.3); color: var(--color-bg-beige); border: 1px solid rgba(242, 240, 230, 0.2); padding: 8px; border-radius: 6px; font-family: var(--font-body); font-size: 0.9rem; cursor: pointer; outline: none; }
-    .select-hora:focus { border-color: var(--color-bg-beige); background-color: rgba(0,0,0,0.6); }
-
-    /* ESTILO SERVICIO */
-    .servicio-badge {
-        color: var(--color-bg-beige);
-        font-weight: bold;
-        font-size: 0.9rem;
-        letter-spacing: 0.5px;
+    /* ESTILO BOTÓN WHATSAPP (MEJORADO) */
+    .whatsapp-btn { 
+        background-color: #25D366; 
+        color: #fff; 
+        text-decoration: none; 
+        font-size: 0.85rem; 
+        font-weight: bold; 
+        padding: 6px 14px; 
+        border-radius: 50px; 
+        display: inline-flex; 
+        align-items: center; 
+        gap: 5px;
+        transition: 0.2s; 
+        box-shadow: 0 2px 5px rgba(37, 211, 102, 0.2);
     }
+    .whatsapp-btn:hover { background-color: #1ebc57; transform: translateY(-1px); box-shadow: 0 4px 8px rgba(37, 211, 102, 0.3); }
+    .wa-icon { font-size: 1rem; }
 
-    .toast-success { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background-color: #2ecc71; color: #000; padding: 12px 24px; border-radius: 50px; font-weight: bold; box-shadow: 0 5px 20px rgba(0,0,0,0.3); z-index: 1000; animation: slideDown 0.3s ease-out; transition: opacity 0.5s; }
-    @keyframes slideDown { from { top: -50px; opacity: 0; } to { top: 20px; opacity: 1; } }
+    .btn-small-delete { background: transparent; color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.3); padding: 5px 10px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer; text-transform: uppercase; }
+    .btn-small-delete:hover { background: #ff6b6b; color: #fff; }
 
+    /* Inputs Horarios Tabla */
+    .hora-input-wrapper { display: flex; gap: 8px; align-items: center; }
+    .input-time-admin { background: rgba(0,0,0,0.3); color: #d4af37; border: 1px solid rgba(242, 240, 230, 0.2); padding: 5px; border-radius: 6px; color-scheme: dark; }
+    .btn-save-time { background: transparent; border: 1px solid #2ecc71; color: #2ecc71; border-radius: 6px; cursor: pointer; padding: 4px 8px; font-weight: bold; }
+    .btn-save-time:hover { background: #2ecc71; color: #000; }
+
+    /* --- CONFIGURACIÓN DÍAS --- */
+    .card-config { max-width: 1200px; margin: 0 auto; background: rgba(255,255,255,0.03); padding: 25px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); }
+    .config-row { display: flex; gap: 15px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 20px; }
+    .input-group { display: flex; flex-direction: column; gap: 5px; }
+    .input-group label { font-size: 0.75rem; color: #d4af37; font-weight: bold; }
+    .input-admin { background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.2); color: #fff; padding: 12px; border-radius: 8px; color-scheme: dark; }
+    .btn-save { background: #d4af37; color: #000; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; height: 43px; }
+    
+    .grid-dias { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 15px; }
+    .dia-card { background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.1); padding: 10px; border-radius: 10px; text-align: center; }
+    .dia-fecha { display: block; font-weight: bold; margin-bottom: 5px; color: #fff; }
+    .dia-estado { font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+    .dia-estado.cerrado { background: rgba(255, 107, 107, 0.15); color: #ff6b6b; }
+    .dia-estado.abierto { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+
+    .toast-success { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #2ecc71; color: #000; padding: 12px 24px; border-radius: 50px; z-index: 1000; font-weight: bold; }
+    .toast-error { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); background: #e74c3c; color: #fff; padding: 12px 24px; border-radius: 50px; z-index: 1000; font-weight: bold; }
+
+   /* RESPONSIVE CELULAR: TARJETAS VERTICALES SIN SCROLL */
     @media (max-width: 768px) {
-        .admin-header { flex-direction: column; gap: 20px; text-align: center; }
-        .table-container { background: transparent; box-shadow: none; border: none; }
-        table thead { display: none; }
-        table, table tbody, table tr, table td { display: block; width: 100%; }
-        table tr { background-color: rgba(255, 255, 255, 0.05); margin-bottom: 20px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); padding: 15px; position: relative; }
+        
+        .admin-wrapper {
+            padding: 10px; /* Márgenes pequeños para aprovechar pantalla */
+            overflow-x: hidden;
+        }
+
+        /* Quitamos el estilo de tabla y reseteamos anchos */
+        .table-container {
+            width: 100%;
+            background: transparent;
+            box-shadow: none;
+            border: none;
+            overflow: visible; /* Importante: sin scroll interno */
+        }
+
+        /* Transformamos todo a bloques apilados */
+        table, thead, tbody, th, td, tr { 
+            display: block; 
+            width: 100%; 
+            min-width: 0; /* CLAVE: Elimina el ancho mínimo que causaba el scroll */
+            box-sizing: border-box; 
+        }
+
+        /* Ocultamos cabeceras */
+        thead { display: none; }
+
+        /* Estilo de la Tarjeta (Turno individual) */
+        tr {
+            background-color: rgba(255, 255, 255, 0.05);
+            margin-bottom: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        /* Borde verde si es HOY */
+        .es-hoy {
+            border: 1px solid #2ecc71;
+            box-shadow: 0 0 15px rgba(46, 204, 113, 0.15);
+        }
         .es-hoy td:first-child { border-left: none; }
-        .es-hoy { border-left: 4px solid #2ecc71; background-color: rgba(46, 204, 113, 0.05); }
-        table td { padding: 10px 0; text-align: right; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; }
-        table td:last-child { border-bottom: none; padding-bottom: 0; padding-top: 15px; justify-content: center; }
-        table td::before { content: attr(data-label); float: left; font-weight: bold; font-size: 0.7rem; color: rgba(242, 240, 230, 0.4); letter-spacing: 1px; }
-        .btn-delete { width: 100%; text-align: center; padding: 12px; }
+
+        /* Filas dentro de la tarjeta (Fecha, Hora, etc) */
+        td {
+            display: flex;
+            justify-content: space-between; /* Texto a los extremos */
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            text-align: right;
+            font-size: 0.95rem;
+        }
+
+        /* Quitamos borde al último elemento (Botones) */
+        td:last-child {
+            border-bottom: none;
+            flex-direction: column; /* Botones uno abajo del otro */
+            gap: 10px;
+            padding-top: 15px;
+        }
+
+        /* Etiquetas (Izquierda) */
+        td::before {
+            content: attr(data-label);
+            font-weight: bold;
+            font-size: 0.75rem;
+            color: #d4af37;
+            text-transform: uppercase;
+            text-align: left;
+            flex-basis: 40%; /* Ocupa espacio fijo */
+        }
+
+        /* Contenido (Derecha) */
+        .fecha-celda, .cliente-text, .servicio-badge {
+            text-align: right;
+            flex-basis: 60%;
+        }
+
+        /* --- ELEMENTOS ESPECÍFICOS --- */
+        
+        /* Input de hora alineado */
+        .hora-input-wrapper {
+            justify-content: flex-end;
+            width: 100%;
+        }
+
+        /* Botón WhatsApp Ancho */
+        .whatsapp-btn {
+            width: 100%;
+            justify-content: center;
+            padding: 12px;
+            font-size: 1rem;
+        }
+
+        /* Botón Borrar Ancho */
+        .btn-small-delete {
+            width: 100%;
+            padding: 12px;
+            font-size: 0.9rem;
+            border: 1px solid rgba(255, 107, 107, 0.5);
+        }
+
+        /* Configuración de días (arregla inputs rotos) */
+        .config-row { flex-direction: column; width: 100%; }
+        .input-group { width: 100%; }
+        .horarios-group { flex-direction: column; width: 100%; }
     }
-</style>

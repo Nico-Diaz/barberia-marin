@@ -1,38 +1,36 @@
 ---
-import { servicios, formatearPrecio } from '../config/servicios';
+import { supabase } from '../lib/supabase';
 
-interface Props {
-    errorBackend?: string;
-}
+interface Props { errorBackend?: string; }
 const { errorBackend } = Astro.props;
+
+// 1. CARGAR PRECIOS DE DB
+const { data: serviciosData } = await supabase.from('servicios').select('*').order('precio', { ascending: true });
+const servicios = serviciosData || [];
+
+const formatearPrecio = (p: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(p);
+
+// 2. CARGAR EXCEPCIONES Y TURNOS OCUPADOS (PARA OCULTARLOS)
+const hoy = new Date().toISOString().split('T')[0];
+const { data: excepciones } = await supabase.from('dias_especiales').select('*').gte('fecha', hoy);
+// Traemos fecha y hora de todos los turnos futuros para bloquearlos
+const { data: turnosOcupados } = await supabase.from('turnos').select('fecha, hora').gte('fecha', hoy);
+
+const excepcionesJSON = JSON.stringify(excepciones || []);
+const turnosOcupadosJSON = JSON.stringify(turnosOcupados || []);
 ---
 
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
 
 <div class="card-form">
+    {errorBackend && <div class="mensaje-alerta error">⚠️ {errorBackend}</div>}
     
-    {errorBackend && (
-        <div class="mensaje-alerta error">
-            ⚠️ {errorBackend}
-        </div>
-    )}
-
-    <div id="js-error" class="mensaje-alerta error" style="display: none;"></div>
-
     <form method="POST" class="booking-form">
-        
         <div class="services-grid">
             {servicios.map((servicio, index) => (
                 <div class="service-item">
-                    <input 
-                        type="radio" 
-                        name="servicio" 
-                        id={servicio.id} 
-                        value={servicio.id} 
-                        required 
-                        checked={index === 0}
-                    >
+                    <input type="radio" name="servicio" id={servicio.id} value={servicio.id} required checked={index === 0}>
                     <label for={servicio.id} class="service-card">
                         <span class="service-name">{servicio.nombre}</span>
                         <span class="service-price">{formatearPrecio(servicio.precio)}</span>
@@ -42,34 +40,15 @@ const { errorBackend } = Astro.props;
         </div>
 
         <div class="row-group">
-            <div class="field-wrapper">
-                <label>NOMBRE</label>
-                <input type="text" name="nombre" placeholder="Tu nombre..." required class="input-app">
-            </div>
-            
-            <div class="field-wrapper">
-                <label>APELLIDO</label>
-                <input type="text" name="apellido" placeholder="Tu apellido..." required class="input-app">
-            </div>
+            <div class="field-wrapper"><label>NOMBRE</label><input type="text" name="nombre" placeholder="Tu nombre..." required class="input-app"></div>
+            <div class="field-wrapper"><label>APELLIDO</label><input type="text" name="apellido" placeholder="Tu apellido..." required class="input-app"></div>
         </div>
         
-        <div class="field-wrapper full-width">
-            <label>WHATSAPP (Opcional)</label>
-            <input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app">
-        </div>
+        <div class="field-wrapper full-width"><label>WHATSAPP (Opcional)</label><input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app"></div>
 
         <div class="row-group">
-            <div class="field-wrapper">
-                <label>FECHA</label>
-                <input type="text" name="fecha" id="input-fecha" required placeholder="Selecciona día..." class="input-app centered" readonly>
-            </div>
-            
-            <div class="field-wrapper">
-                <label>HORA</label>
-                <select name="hora" id="select-hora" required disabled class="input-app centered">
-                    <option value="" disabled selected>--:--</option>
-                </select>
-            </div>
+            <div class="field-wrapper"><label>FECHA</label><input type="text" name="fecha" id="input-fecha" required placeholder="Selecciona día..." class="input-app centered" readonly></div>
+            <div class="field-wrapper"><label>HORA</label><select name="hora" id="select-hora" required disabled class="input-app centered"><option value="" disabled selected>--:--</option></select></div>
         </div>
 
         <button type="submit" class="btn-app">CONFIRMAR TURNO</button>
@@ -79,60 +58,85 @@ const { errorBackend } = Astro.props;
 <script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
-<script is:inline>
-    // ... (El script del calendario se mantiene IDÉNTICO, solo cambia el HTML de arriba) ...
-    const horarios = {
-        0: null, 1: { inicio: 10, fin: 19 }, 2: { inicio: 10, fin: 20 },
-        3: { inicio: 10, fin: 19 }, 4: { inicio: 10, fin: 20 },
-        5: { inicio: 10, fin: 19 }, 6: { inicio: 11, fin: 21 },
+<script define:vars={{ excepcionesJSON, turnosOcupadosJSON }}>
+    const diasEspeciales = JSON.parse(excepcionesJSON);
+    const turnosOcupados = JSON.parse(turnosOcupadosJSON);
+    
+    const horariosDefault = {
+        0: null, 1: { i: "10:00", f: "19:00" }, 2: { i: "10:00", f: "20:00" },
+        3: { i: "10:00", f: "19:00" }, 4: { i: "10:00", f: "20:00" },
+        5: { i: "10:00", f: "19:00" }, 6: { i: "11:00", f: "21:00" },
     };
 
     document.addEventListener('DOMContentLoaded', function() {
         const selectHora = document.getElementById('select-hora');
-        const errorDiv = document.getElementById('js-error');
 
         flatpickr("#input-fecha", {
             locale: "es", minDate: "today", dateFormat: "Y-m-d", disableMobile: "true",
-            disable: [ function(date) { return (date.getDay() === 0); } ],
-            onChange: function(selectedDates, dateStr, instance) {
-                if (errorDiv) errorDiv.style.display = 'none';
+            disable: [
+                function(date) {
+                    const offset = date.getTimezoneOffset();
+                    const localDate = new Date(date.getTime() - (offset*60*1000));
+                    const fechaStr = localDate.toISOString().split('T')[0];
+                    const regla = diasEspeciales.find(d => d.fecha === fechaStr);
+                    if (regla) return regla.cerrado;
+                    return (date.getDay() === 0);
+                }
+            ],
+            onChange: function(selectedDates, dateStr) {
                 selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
                 selectHora.disabled = true;
-
                 if (selectedDates.length === 0) return;
 
                 const fechaElegida = selectedDates[0];
                 const diaSemana = fechaElegida.getDay();
-                const configDia = horarios[diaSemana];
                 const ahora = new Date();
 
-                if (configDia) {
-                    selectHora.disabled = false;
-                    for (let h = configDia.inicio; h <= configDia.fin; h++) {
-                        const minutosPosibles = ['00', '30'];
-                        for (let m of minutosPosibles) {
-                            if (h === configDia.fin && m === '30') continue; 
+                let inicioStr, finStr;
+                const regla = diasEspeciales.find(d => d.fecha === dateStr);
 
-                            const horaTexto = `${h}:${m}`;
+                if (regla) { inicioStr = regla.hora_inicio; finStr = regla.hora_fin; } 
+                else {
+                    const config = horariosDefault[diaSemana];
+                    if (!config) return; 
+                    inicioStr = config.i; finStr = config.f;
+                }
+
+                selectHora.disabled = false;
+                let hayCupo = false;
+
+                // Generamos horarios cada 30 min
+                for (let h = 0; h <= 23; h++) {
+                    const minutos = ['00', '30'];
+                    for (let m of minutos) {
+                        const horaTexto = `${h.toString().padStart(2, '0')}:${m}`;
+                        
+                        if (horaTexto >= inicioStr && horaTexto < finStr) {
+                            
+                            // 1. Validar si ya pasó la hora (si es hoy)
                             const fechaCandidata = new Date(fechaElegida);
-                            fechaCandidata.setHours(h);
-                            fechaCandidata.setMinutes(parseInt(m));
-                            fechaCandidata.setSeconds(0);
-
+                            fechaCandidata.setHours(h, parseInt(m), 0);
                             if (fechaCandidata < ahora) continue;
 
+                            // 2. VALIDAR SI ESTÁ OCUPADO (NUEVO)
+                            // Buscamos si existe un turno con la misma fecha y hora
+                            const estaOcupado = turnosOcupados.some(t => t.fecha === dateStr && t.hora === horaTexto);
+                            
+                            // Si está ocupado, NO lo agregamos al select (continue salta al siguiente)
+                            if (estaOcupado) continue;
+
+                            hayCupo = true;
                             const option = document.createElement('option');
                             option.value = horaTexto;
                             option.textContent = horaTexto;
                             selectHora.appendChild(option);
                         }
                     }
-                    if (selectHora.options.length === 1) {
-                        const option = document.createElement('option');
-                        option.text = "Sin cupo hoy";
-                        option.disabled = true;
-                        selectHora.appendChild(option);
-                    }
+                }
+                
+                if (!hayCupo) {
+                    selectHora.innerHTML = '<option disabled selected>Sin turnos disponibles</option>';
+                    selectHora.disabled = true;
                 }
             }
         });
@@ -140,94 +144,25 @@ const { errorBackend } = Astro.props;
 </script>
 
 <style>
-    /* ... (Tus estilos anteriores se mantienen) ... */
-    .card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
-    .mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
-    .row-group { display: flex; gap: 15px; margin-bottom: 20px; }
-    .full-width { width: 100%; margin-bottom: 20px; }
-    .field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-    label { color: var(--color-bg-beige); font-size: 0.7rem; font-weight: bold; opacity: 0.6; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
-    
-    .input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: var(--color-bg-beige); font-size: 0.95rem; border-radius: 10px; outline: none; transition: 0.2s ease-in-out; font-family: var(--font-body); }
-    .input-app:focus { border-color: var(--color-bg-beige); background-color: rgba(0, 0, 0, 0.5); transform: translateY(-1px); }
-    .input-app.centered { text-align: center; }
-    .input-app::placeholder { color: rgba(242, 240, 230, 0.3); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; }
-    select option { background-color: #222; color: #fff; }
-    
-    .btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: var(--color-bg-beige); color: var(--color-text-black); border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; box-shadow: 0 5px 15px rgba(242, 240, 230, 0.1); }
-    .btn-app:hover { background-color: #fff; transform: scale(1.02); }
-    @media (max-width: 480px) { .row-group { flex-direction: column; gap: 20px; } }
-
-    /* ESTILOS FLATPICKR (Mantener) */
-    :global(.flatpickr-calendar) { background: #1a1a1a !important; border: 1px solid rgba(242, 240, 230, 0.2) !important; box-shadow: 0 10px 40px rgba(0,0,0,0.5) !important; }
-    :global(.flatpickr-months .flatpickr-month) { background: #1a1a1a !important; color: var(--color-bg-beige) !important; fill: var(--color-bg-beige) !important; }
-    :global(.flatpickr-current-month .flatpickr-monthDropdown-months) { background: #1a1a1a !important; }
-    :global(.flatpickr-weekdays) { background: #1a1a1a !important; }
-    :global(span.flatpickr-weekday) { color: rgba(242, 240, 230, 0.6) !important; }
-    :global(.flatpickr-day) { color: var(--color-bg-beige) !important; }
-    :global(.flatpickr-day:hover) { background: rgba(242, 240, 230, 0.2) !important; border-color: transparent !important; }
-    :global(.flatpickr-day.selected), :global(.flatpickr-day.startRange), :global(.flatpickr-day.endRange), :global(.flatpickr-day.selected:hover) { background: var(--color-bg-beige) !important; color: var(--color-text-black) !important; border-color: var(--color-bg-beige) !important; font-weight: bold; }
-    :global(.flatpickr-day.flatpickr-disabled) { color: rgba(255, 255, 255, 0.1) !important; }
-    :global(.flatpickr-prev-month svg), :global(.flatpickr-next-month svg) { fill: var(--color-bg-beige) !important; }
-
-    /* --- ESTILOS DE LOS BOTONES DE SERVICIO (NUEVO) --- */
-    .services-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 15px;
-        margin-bottom: 25px;
-    }
-
-    .service-item { position: relative; }
-    
-    /* Ocultamos el radio button original */
-    .service-item input[type="radio"] {
-        position: absolute;
-        opacity: 0;
-        cursor: pointer;
-    }
-
-    /* La tarjeta visual */
-    .service-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        background-color: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(242, 240, 230, 0.15);
-        border-radius: 12px;
-        padding: 15px;
-        cursor: pointer;
-        transition: 0.3s all;
-        height: 100%;
-    }
-
-    .service-name {
-        font-family: var(--font-titles);
-        font-size: 1.1rem;
-        letter-spacing: 1px;
-        margin-bottom: 5px;
-        text-align: center;
-    }
-
-    .service-price {
-        font-weight: bold;
-        color: rgba(242, 240, 230, 0.6);
-        font-size: 0.9rem;
-    }
-
-    /* ESTADO SELECCIONADO (CHECKED) */
-    /* Cuando el input está checked, cambiamos el estilo del label hermano */
-    .service-item input:checked + .service-card {
-        background-color: var(--color-bg-beige);
-        color: var(--color-text-black);
-        border-color: var(--color-bg-beige);
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(212, 175, 55, 0.2);
-    }
-
-    .service-item input:checked + .service-card .service-price {
-        color: #000;
-        font-weight: 800;
-    }
+/* Estilos Formulario (Sin cambios) */
+.card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
+.mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
+.row-group { display: flex; gap: 15px; margin-bottom: 20px; }
+.full-width { width: 100%; margin-bottom: 20px; }
+.field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+label { color: #d4af37; font-size: 0.7rem; font-weight: bold; opacity: 0.8; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
+.input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: #fff; font-size: 0.95rem; border-radius: 10px; outline: none; font-family: var(--font-body); }
+.input-app:focus { border-color: #d4af37; background-color: rgba(0, 0, 0, 0.5); }
+.input-app.centered { text-align: center; }
+select option { background-color: #222; color: #fff; }
+.btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: #d4af37; color: #000; border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; }
+.btn-app:hover { background-color: #fff; transform: scale(1.02); }
+.services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
+.service-item { position: relative; }
+.service-item input[type="radio"] { position: absolute; opacity: 0; cursor: pointer; }
+.service-card { display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); border-radius: 12px; padding: 15px; cursor: pointer; transition: 0.3s all; height: 100%; }
+.service-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 1px; margin-bottom: 5px; text-align: center; }
+.service-price { font-weight: bold; color: rgba(242, 240, 230, 0.6); font-size: 0.9rem; }
+.service-item input:checked + .service-card { background-color: #d4af37; color: #000; border-color: #d4af37; transform: translateY(-2px); }
+.service-item input:checked + .service-card .service-price { color: #000; font-weight: 800; }
 </style>
