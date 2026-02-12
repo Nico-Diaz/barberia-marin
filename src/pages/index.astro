@@ -100,7 +100,7 @@ if (Astro.request.method === 'POST') {
 
             await transporter.sendMail({
                 from: `"Barbería Web" <${import.meta.env.GMAIL_USER}>`,
-                to: import.meta.env.GMAIL_USER,
+                to: 'ezegasflo@gmail.com',
                 subject: `🔔 Nuevo Turno: ${nombre} ${apellido}`,
                 html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #ccc; border-radius: 10px;">
                     <h2 style="color: #d4af37;">¡Nuevo Turno!</h2>
