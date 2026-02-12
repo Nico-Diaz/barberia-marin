@@ -2,7 +2,6 @@
 import Layout from '../layouts/Layout.astro';
 import BookingSection from '../components/BookingSection.astro';
 import { supabase } from '../lib/supabase';
-// YA NO IMPORTAMOS 'servicios.ts' PORQUE USAMOS LA BASE DE DATOS
 import nodemailer from 'nodemailer';
 
 let mensajeError = "";
@@ -19,32 +18,40 @@ if (Astro.request.method === 'POST') {
   const diaSemana = new Date(fecha + 'T00:00:00').getDay();
 
   try {
-    // 1. VALIDAR SERVICIO (CORRECCIÓN AQUÍ)
-    // Buscamos el servicio directamente en la base de datos
+    // 1. VALIDAR SERVICIO
     const { data: servicioEncontrado, error: errorServicio } = await supabase
         .from('servicios')
         .select('*')
         .eq('id', servicioId)
         .single();
 
-    // Si no existe en la base de datos o dio error...
     if (errorServicio || !servicioEncontrado) {
         throw { message: "Por favor, seleccione un servicio válido." };
     }
-    
     const nombreServicio = servicioEncontrado.nombre;
 
+    // --- CORRECCIÓN DE ZONA HORARIA (ARGENTINA UTC-3) ---
+    const fechaGlobal = new Date();
+    // Restamos 3 horas (3 * 60 minutos * 60 segundos * 1000 milisegundos)
+    const ahoraArgentina = new Date(fechaGlobal.getTime() - (3 * 60 * 60 * 1000));
+
+    // Usamos esta fecha ajustada para calcular el "HOY"
+    const fechaHoyStr = ahoraArgentina.toISOString().split('T')[0];
+    
     // 2. VALIDACIÓN FECHA PASADA
-    const ahora = new Date();
-    const fechaHoyStr = ahora.toISOString().split('T')[0];
     if (fecha < fechaHoyStr) throw { message: "No puedes reservar en el pasado." };
     
+    // Validación de hora exacta si el turno es HOY
     if (fecha === fechaHoyStr) {
-        const horaActual = ahora.getHours();
-        const minActual = ahora.getMinutes();
+        // Usamos getUTCHours porque ya "movimos" el tiempo 3 horas atrás manualmente
+        const horaActual = ahoraArgentina.getUTCHours();
+        const minActual = ahoraArgentina.getUTCMinutes();
+        
         const [hTurno, mTurno] = hora.split(':').map(Number);
+        
+        // Comparamos
         if (hTurno < horaActual || (hTurno === horaActual && mTurno < minActual)) {
-             throw { message: "Ese horario ya pasó." };
+             throw { message: "Ese horario ya pasó (hora local)." };
         }
     }
 
@@ -93,7 +100,7 @@ if (Astro.request.method === 'POST') {
 
             await transporter.sendMail({
                 from: `"Barbería Web" <${import.meta.env.GMAIL_USER}>`,
-                to: import.meta.env.GMAIL_USER, // O el mail del dueño
+                to: import.meta.env.GMAIL_USER,
                 subject: `🔔 Nuevo Turno: ${nombre} ${apellido}`,
                 html: `<div style="font-family: sans-serif; padding: 20px; border: 1px solid #ccc; border-radius: 10px;">
                     <h2 style="color: #d4af37;">¡Nuevo Turno!</h2>
