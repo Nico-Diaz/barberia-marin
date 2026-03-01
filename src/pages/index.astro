@@ -87,7 +87,14 @@ if (Astro.request.method === 'POST') {
 
         // 5. GUARDAR TURNO
         const { error: errorInsert } = await supabase.from('turnos').insert([{ 
-            nombre, apellido, fecha, hora, telefono, servicio: nombreServicio 
+            negocio_id: import.meta.env.PUBLIC_NEGOCIO_ID,
+            cliente_nombre: nombre,      // Cambió el nombre de la columna
+            cliente_apellido: apellido,  // Cambió el nombre de la columna
+            cliente_telefono: telefono,  // Cambió el nombre de la columna
+            fecha: fecha,
+            hora: hora,
+            servicio: nombreServicio,
+            profesional: 'Ezequiel'      // ESTO ES NUEVO Y OBLIGATORIO (NOT NULL)
         }]);
         if (errorInsert) throw errorInsert;
 

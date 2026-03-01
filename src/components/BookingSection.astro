@@ -1,168 +1,282 @@
 ---
 import { supabase } from '../lib/supabase';
 
-interface Props { errorBackend?: string; }
 const { errorBackend } = Astro.props;
 
-// 1. CARGAR PRECIOS DE DB
-const { data: serviciosData } = await supabase.from('servicios').select('*').order('precio', { ascending: true });
-const servicios = serviciosData || [];
+// 1. Definimos cuál es tu negocio leyendo el .env
+const MI_NEGOCIO = import.meta.env.PUBLIC_NEGOCIO_ID;
 
-const formatearPrecio = (p: number) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', minimumFractionDigits: 0 }).format(p);
+// 2. Traer SOLO los servicios de ESTA barbería
+const { data: serviciosDB } = await supabase
+    .from('servicios')
+    .select('*')
+    .eq('negocio_id', MI_NEGOCIO)
+    .order('precio', { ascending: true });
+const servicios = serviciosDB || [];
 
-// 2. CARGAR EXCEPCIONES Y TURNOS OCUPADOS (PARA OCULTARLOS)
-const hoy = new Date().toISOString().split('T')[0];
-const { data: excepciones } = await supabase.from('dias_especiales').select('*').gte('fecha', hoy);
-// Traemos fecha y hora de todos los turnos futuros para bloquearlos
-const { data: turnosOcupados } = await supabase.from('turnos').select('fecha, hora').gte('fecha', hoy);
+const hoyStr = new Date().toISOString().split('T')[0];
 
-const excepcionesJSON = JSON.stringify(excepciones || []);
-const turnosOcupadosJSON = JSON.stringify(turnosOcupados || []);
+// 3. Traer SOLO los días cerrados de ESTA barbería
+const { data: diasDB } = await supabase
+    .from('dias_especiales')
+    .select('fecha, motivo, cerrado')
+    .eq('negocio_id', MI_NEGOCIO)
+    .gte('fecha', hoyStr)
+    .eq('cerrado', true);
+const diasCerrados = diasDB || [];
+
+// 4. Traer SOLO los turnos ocupados de ESTA barbería
+const { data: turnosDB } = await supabase
+    .from('turnos')
+    .select('fecha, hora')
+    .eq('negocio_id', MI_NEGOCIO)
+    .gte('fecha', hoyStr);
+const turnosOcupados = turnosDB || [];
 ---
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/themes/dark.css">
+<section class="booking-section">
+    {errorBackend && <div class="error-banner">⚠️ {errorBackend}</div>}
 
-<div class="card-form">
-    {errorBackend && <div class="mensaje-alerta error">⚠️ {errorBackend}</div>}
-    
-    <form method="POST" class="booking-form">
-        <div class="services-grid">
-            {servicios.map((servicio, index) => (
-                <div class="service-item">
-                    <input type="radio" name="servicio" id={servicio.id} value={servicio.id} required checked={index === 0}>
-                    <label for={servicio.id} class="service-card">
-                        <span class="service-name">{servicio.nombre}</span>
-                        <span class="service-price">{formatearPrecio(servicio.precio)}</span>
-                    </label>
-                </div>
-            ))}
-        </div>
-
-        <div class="row-group">
-            <div class="field-wrapper"><label>NOMBRE</label><input type="text" name="nombre" placeholder="Tu nombre..." required class="input-app"></div>
-            <div class="field-wrapper"><label>APELLIDO</label><input type="text" name="apellido" placeholder="Tu apellido..." required class="input-app"></div>
-        </div>
+    <form method="POST" class="booking-form" id="form-reserva">
         
-        <div class="field-wrapper full-width"><label>WHATSAPP (Opcional)</label><input type="tel" name="telefono" placeholder="Ej: 11 1234 5678" class="input-app"></div>
-
-        <div class="row-group">
-            <div class="field-wrapper"><label>FECHA</label><input type="text" name="fecha" id="input-fecha" required placeholder="Selecciona día..." class="input-app centered" readonly></div>
-            <div class="field-wrapper"><label>HORA</label><select name="hora" id="select-hora" required disabled class="input-app centered"><option value="" disabled selected>--:--</option></select></div>
+        <div class="form-group">
+            <label>Selecciona tu Servicio *</label>
+            <div class="servicios-grid">
+                {servicios.map(serv => (
+                    <label class="servicio-label">
+                        <input type="radio" name="servicio" value={serv.id} required class="sr-only" />
+                        <div class="servicio-card">
+                            <span class="serv-nombre">{serv.nombre}</span>
+                            <span class="serv-precio">${serv.precio}</span>
+                        </div>
+                    </label>
+                ))}
+            </div>
         </div>
 
-        <button type="submit" class="btn-app">CONFIRMAR TURNO</button>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="nombre">Nombre *</label>
+                <input type="text" name="nombre" id="nombre" required class="input-field" placeholder="Tu nombre">
+            </div>
+            <div class="form-group">
+                <label for="apellido">Apellido *</label>
+                <input type="text" name="apellido" id="apellido" required class="input-field" placeholder="Tu apellido">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="telefono">WhatsApp *</label>
+            <input type="tel" name="telefono" id="telefono" required class="input-field" placeholder="Ej: 2611234567">
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="fecha">Fecha *</label>
+                <input type="date" name="fecha" id="fecha" required class="input-field">
+                <small id="mensaje-dia" class="mensaje-ayuda"></small>
+            </div>
+            <div class="form-group">
+                <label for="hora">Horario *</label>
+                <select name="hora" id="hora" required class="input-field" disabled>
+                    <option value="" disabled selected>Primero elige fecha</option>
+                </select>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-submit" id="btn-submit">CONFIRMAR TURNO</button>
     </form>
-</div>
+</section>
 
-<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+<script is:inline define:vars={{ turnosOcupados, diasCerrados }}>
+    document.addEventListener('DOMContentLoaded', () => {
+        const fechaInput = document.getElementById('fecha');
+        const horaSelect = document.getElementById('hora');
+        const mensajeDia = document.getElementById('mensaje-dia');
+        const btnSubmit = document.getElementById('btn-submit');
 
-<script define:vars={{ excepcionesJSON, turnosOcupadosJSON }}>
-    const diasEspeciales = JSON.parse(excepcionesJSON);
-    const turnosOcupados = JSON.parse(turnosOcupadosJSON);
-    
-    const horariosDefault = {
-        0: null, 1: { i: "10:00", f: "19:00" }, 2: { i: "10:00", f: "20:00" },
-        3: { i: "10:00", f: "19:00" }, 4: { i: "10:00", f: "20:00" },
-        5: { i: "10:00", f: "19:00" }, 6: { i: "11:00", f: "21:00" },
-    };
+        const hoy = new Date();
+        const hoyStrLocal = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+        fechaInput.min = hoyStrLocal;
 
-    document.addEventListener('DOMContentLoaded', function() {
-        const selectHora = document.getElementById('select-hora');
+        fechaInput.addEventListener('change', (e) => {
+            const fechaSeleccionada = e.target.value;
+            horaSelect.innerHTML = '<option value="" disabled selected>Cargando...</option>';
+            horaSelect.disabled = true;
+            mensajeDia.textContent = '';
+            btnSubmit.disabled = false;
 
-        flatpickr("#input-fecha", {
-            locale: "es", minDate: "today", dateFormat: "Y-m-d", disableMobile: "true",
-            disable: [
-                function(date) {
-                    const offset = date.getTimezoneOffset();
-                    const localDate = new Date(date.getTime() - (offset*60*1000));
-                    const fechaStr = localDate.toISOString().split('T')[0];
-                    const regla = diasEspeciales.find(d => d.fecha === fechaStr);
-                    if (regla) return regla.cerrado;
-                    return (date.getDay() === 0);
-                }
-            ],
-            onChange: function(selectedDates, dateStr) {
-                selectHora.innerHTML = '<option value="" disabled selected>--:--</option>';
-                selectHora.disabled = true;
-                if (selectedDates.length === 0) return;
+            if (!fechaSeleccionada) return;
 
-                const fechaElegida = selectedDates[0];
-                const diaSemana = fechaElegida.getDay();
-                const ahora = new Date();
+            const diaCerrado = diasCerrados.find(d => d.fecha === fechaSeleccionada);
+            if (diaCerrado) {
+                mensajeDia.textContent = `❌ Cerrado: ${diaCerrado.motivo || 'Feriado'}`;
+                mensajeDia.style.color = '#ff6b6b';
+                horaSelect.innerHTML = '<option value="" disabled selected>No disponible</option>';
+                btnSubmit.disabled = true;
+                return;
+            }
 
-                let inicioStr, finStr;
-                const regla = diasEspeciales.find(d => d.fecha === dateStr);
+            const fechaObj = new Date(fechaSeleccionada + 'T12:00:00');
+            const diaSemana = fechaObj.getDay();
 
-                if (regla) { inicioStr = regla.hora_inicio; finStr = regla.hora_fin; } 
-                else {
-                    const config = horariosDefault[diaSemana];
-                    if (!config) return; 
-                    inicioStr = config.i; finStr = config.f;
-                }
+            let apertura = 0; let cierre = 0;
 
-                selectHora.disabled = false;
-                let hayCupo = false;
+            if (diaSemana === 0) { 
+                mensajeDia.textContent = '❌ Domingos cerrado.';
+                mensajeDia.style.color = '#ff6b6b';
+                horaSelect.innerHTML = '<option value="" disabled selected>Cerrado</option>';
+                btnSubmit.disabled = true;
+                return;
+            } else if ([1, 3, 5].includes(diaSemana)) { 
+                apertura = 10; cierre = 19; mensajeDia.textContent = 'Horario: 10:00 a 19:00hs';
+            } else if ([2, 4].includes(diaSemana)) { 
+                apertura = 10; cierre = 20; mensajeDia.textContent = 'Horario: 10:00 a 20:00hs';
+            } else if (diaSemana === 6) { 
+                apertura = 11; cierre = 21; mensajeDia.textContent = 'Horario: 11:00 a 21:00hs';
+            }
+            
+            mensajeDia.style.color = '#2ecc71';
 
-                // Generamos horarios cada 30 min
-                for (let h = 0; h <= 23; h++) {
-                    const minutos = ['00', '30'];
-                    for (let m of minutos) {
-                        const horaTexto = `${h.toString().padStart(2, '0')}:${m}`;
-                        
-                        if (horaTexto >= inicioStr && horaTexto < finStr) {
-                            
-                            // 1. Validar si ya pasó la hora (si es hoy)
-                            const fechaCandidata = new Date(fechaElegida);
-                            fechaCandidata.setHours(h, parseInt(m), 0);
-                            if (fechaCandidata < ahora) continue;
+            horaSelect.innerHTML = '<option value="" disabled selected>Seleccione hora</option>';
+            const turnosDelDia = turnosOcupados.filter(t => t.fecha === fechaSeleccionada);
+            
+            const esHoy = fechaSeleccionada === hoyStrLocal;
+            const horaActual = hoy.getHours();
+            const minActual = hoy.getMinutes();
 
-                            // 2. VALIDAR SI ESTÁ OCUPADO (NUEVO)
-                            // Buscamos si existe un turno con la misma fecha y hora
-                            const estaOcupado = turnosOcupados.some(t => t.fecha === dateStr && t.hora === horaTexto);
-                            
-                            // Si está ocupado, NO lo agregamos al select (continue salta al siguiente)
-                            if (estaOcupado) continue;
+            for (let h = apertura; h < cierre; h++) {
+                for (let m = 0; m < 60; m += 30) {
+                    const horaFomateada = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+                    
+                    if (esHoy && (h < horaActual || (h === horaActual && m <= minActual))) continue; 
 
-                            hayCupo = true;
-                            const option = document.createElement('option');
-                            option.value = horaTexto;
-                            option.textContent = horaTexto;
-                            selectHora.appendChild(option);
-                        }
-                    }
-                }
-                
-                if (!hayCupo) {
-                    selectHora.innerHTML = '<option disabled selected>Sin turnos disponibles</option>';
-                    selectHora.disabled = true;
+                    const estaOcupado = turnosDelDia.some(t => t.hora.startsWith(horaFomateada));
+                    const option = document.createElement('option');
+                    option.value = horaFomateada;
+                    option.textContent = horaFomateada + (estaOcupado ? ' (Ocupado)' : '');
+                    if (estaOcupado) option.disabled = true;
+                    horaSelect.appendChild(option);
                 }
             }
+            horaSelect.disabled = false;
         });
     });
 </script>
 
 <style>
-/* Estilos Formulario (Sin cambios) */
-.card-form { background-color: rgba(255, 255, 255, 0.05); border: 1px solid rgba(242, 240, 230, 0.1); padding: 30px; border-radius: 16px; width: 100%; max-width: 450px; box-shadow: 0 20px 40px rgba(0,0,0,0.3); }
-.mensaje-alerta.error { background-color: #3b1215; color: #ff8a8a; border: 1px solid #63181d; padding: 10px; margin-bottom: 20px; border-radius: 8px; font-size: 0.9rem; text-align: center; }
-.row-group { display: flex; gap: 15px; margin-bottom: 20px; }
-.full-width { width: 100%; margin-bottom: 20px; }
-.field-wrapper { flex: 1; display: flex; flex-direction: column; gap: 8px; }
-label { color: #d4af37; font-size: 0.7rem; font-weight: bold; opacity: 0.8; letter-spacing: 1.5px; text-transform: uppercase; margin-left: 5px; }
-.input-app { width: 100%; padding: 14px 16px; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); color: #fff; font-size: 0.95rem; border-radius: 10px; outline: none; font-family: var(--font-body); }
-.input-app:focus { border-color: #d4af37; background-color: rgba(0, 0, 0, 0.5); }
-.input-app.centered { text-align: center; }
-select option { background-color: #222; color: #fff; }
-.btn-app { width: 100%; padding: 18px; margin-top: 10px; background-color: #d4af37; color: #000; border: none; border-radius: 50px; font-weight: 800; font-size: 1rem; letter-spacing: 2px; cursor: pointer; transition: transform 0.2s; text-transform: uppercase; }
-.btn-app:hover { background-color: #fff; transform: scale(1.02); }
-.services-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 25px; }
-.service-item { position: relative; }
-.service-item input[type="radio"] { position: absolute; opacity: 0; cursor: pointer; }
-.service-card { display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: rgba(0, 0, 0, 0.3); border: 1px solid rgba(242, 240, 230, 0.15); border-radius: 12px; padding: 15px; cursor: pointer; transition: 0.3s all; height: 100%; }
-.service-name { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; letter-spacing: 1px; margin-bottom: 5px; text-align: center; }
-.service-price { font-weight: bold; color: rgba(242, 240, 230, 0.6); font-size: 0.9rem; }
-.service-item input:checked + .service-card { background-color: #d4af37; color: #000; border-color: #d4af37; transform: translateY(-2px); }
-.service-item input:checked + .service-card .service-price { color: #000; font-weight: 800; }
+    /* ----------------------------------------------------------- */
+    /* ESTILOS: Montserrat, Glassmorphism y CUADRADITOS DORADOS    */
+    /* ----------------------------------------------------------- */
+    
+    .booking-section {
+        background: rgba(20, 20, 20, 0.6);
+        backdrop-filter: blur(10px);
+        padding: 40px;
+        border-radius: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        width: 100%;
+        max-width: 550px;
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.5);
+        margin: 0 auto;
+        font-family: 'Montserrat', sans-serif;
+    }
+
+    .error-banner {
+        background: rgba(231, 76, 60, 0.2); color: #ff6b6b; padding: 15px; border-radius: 10px;
+        margin-bottom: 25px; text-align: center; font-weight: bold; border: 1px solid rgba(231, 76, 60, 0.3);
+    }
+
+    .booking-form { display: flex; flex-direction: column; gap: 15px; }
+    .form-row { display: flex; gap: 20px; }
+    .form-group { flex: 1; display: flex; flex-direction: column; }
+
+    label {
+        margin-bottom: 8px; font-weight: 600; color: #fff; font-size: 0.85rem;
+        text-transform: uppercase; letter-spacing: 1.5px;
+    }
+
+    .input-field {
+        padding: 15px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.1);
+        background: rgba(0, 0, 0, 0.3); color: #fff; font-family: 'Montserrat', sans-serif;
+        font-size: 1rem; transition: all 0.3s ease;
+    }
+    .input-field:focus { outline: none; border-color: rgba(212, 175, 55, 0.5); box-shadow: 0 0 10px rgba(212, 175, 55, 0.1); }
+    .input-field::placeholder { color: rgba(255, 255, 255, 0.3); }
+    .input-field:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    select.input-field {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23d4af37' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat; background-position: right 15px center; background-size: 18px; padding-right: 45px;
+    }
+
+    /* --- ESTILOS DE LOS CUADRADITOS DE SERVICIO --- */
+    .servicios-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: 10px;
+        margin-top: 5px;
+    }
+
+    .sr-only {
+        position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0;
+    }
+
+    .servicio-label { cursor: pointer; display: block; height: 100%; }
+
+    .servicio-card {
+        background: rgba(0, 0, 0, 0.4);
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        border-radius: 12px;
+        padding: 15px 10px;
+        text-align: center;
+        transition: all 0.3s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        gap: 5px;
+        height: 100%;
+        box-sizing: border-box;
+    }
+
+    .serv-nombre { font-weight: 600; font-size: 0.9rem; color: #fff; transition: color 0.3s; }
+    .serv-precio { font-size: 0.85rem; color: rgba(255, 255, 255, 0.5); font-weight: bold; transition: color 0.3s; }
+
+    /* Efecto Hover */
+    .servicio-label:hover .servicio-card { border-color: rgba(212, 175, 55, 0.5); background: rgba(0,0,0,0.6); }
+
+    /* Efecto Seleccionado (El amarillo/dorado) */
+    input[type="radio"]:checked + .servicio-card {
+        border-color: #d4af37;
+        background: rgba(212, 175, 55, 0.15);
+        box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+        transform: scale(1.02);
+    }
+    input[type="radio"]:checked + .servicio-card .serv-nombre { color: #d4af37; }
+    input[type="radio"]:checked + .servicio-card .serv-precio { color: #fff; }
+
+    /* --- BOTÓN SUBMIT --- */
+    .btn-submit {
+        width: 100%; padding: 18px; background: linear-gradient(135deg, #d4af37 0%, #f1c40f 100%);
+        color: #000; border: none; border-radius: 12px; font-size: 1rem; font-weight: 700;
+        text-transform: uppercase; letter-spacing: 2px; cursor: pointer; transition: all 0.3s ease;
+        margin-top: 10px; box-shadow: 0 5px 15px rgba(212, 175, 55, 0.2);
+    }
+    .btn-submit:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(212, 175, 55, 0.3); }
+    .btn-submit:active:not(:disabled) { transform: translateY(1px); }
+    .btn-submit:disabled { background: #555; color: #999; cursor: not-allowed; box-shadow: none; }
+
+    .mensaje-ayuda { margin-top: 8px; font-size: 0.8rem; display: block; font-weight: 500; letter-spacing: 0.5px; }
+    
+    /* Responsive */
+    @media (max-width: 600px) {
+        .form-row { flex-direction: column; gap: 15px; }
+        .booking-section { padding: 25px; margin: 10px; width: auto; }
+        label { font-size: 0.8rem; }
+        .input-field { padding: 12px; }
+        .servicios-grid { grid-template-columns: repeat(2, 1fr); }
+    }
 </style>
