@@ -129,7 +129,10 @@ const turnosOcupados = turnosDB || [];
                 btnSubmit.disabled = true;
                 return;
             } else {
-                apertura = 9; cierre = 21; mensajeDia.textContent = 'Horario: 9:00 a 21:00hs';
+                // abrimos a las 9 y el último turno posible es 21:30
+                apertura = 9;
+                cierre = 21.5; // usamos media hora como decimal para que el bucle incluya 21:30
+                mensajeDia.textContent = 'Horario: 9:00 a 21:30hs';
             }
             
             mensajeDia.style.color = '#2ecc71';
@@ -143,6 +146,9 @@ const turnosOcupados = turnosDB || [];
 
             for (let h = apertura; h < cierre; h++) {
                 for (let m = 0; m < 60; m += 30) {
+                    // si estamos en la última hora y ya pasamos de 30 minutos, salimos
+                    if (h === Math.floor(cierre) && m > (cierre % 1) * 60) continue;
+
                     const horaFomateada = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
                     
                     if (esHoy && (h < horaActual || (h === horaActual && m <= minActual))) continue; 

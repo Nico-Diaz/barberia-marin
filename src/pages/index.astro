@@ -72,7 +72,7 @@ if (Astro.request.method === 'POST') {
         if (diaSemana === 0) mensajeError = "Domingos cerrado.";
         else if ([1, 3, 5].includes(diaSemana)) { inicioStr = "10:00"; finStr = "19:00"; mensajeRango = "Lun, Mie, Vie: 10 a 19hs."; } 
         else if ([2, 4].includes(diaSemana)) { inicioStr = "10:00"; finStr = "20:00"; mensajeRango = "Mar, Jue: 10 a 20hs."; } 
-        else if (diaSemana === 6) { inicioStr = "11:00"; finStr = "21:00"; mensajeRango = "Sábados: 11 a 21hs."; }
+        else if (diaSemana === 6) { inicioStr = "09:00"; finStr = "21:30"; mensajeRango = "Sábados: 9 a 21:30hs."; }
     }
 
     if (!mensajeError && inicioStr && finStr) {
@@ -100,11 +100,7 @@ if (Astro.request.method === 'POST') {
 
         // 6. ENVIAR EMAIL
         try {
-            const transporter = nodemailer.createTransport({ 
-                service: 'gmail', 
-                auth: { user: import.meta.env.GMAIL_USER, pass: import.meta.env.GMAIL_PASS } 
-            });
-
+            const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: import.meta.env.GMAIL_USER, pass: import.meta.env.GMAIL_PASS } });
             await transporter.sendMail({
                 from: `"Barbería Web" <${import.meta.env.GMAIL_USER}>`,
                 to: 'ezegasflo@gmail.com',
