@@ -92,6 +92,39 @@ if (Astro.request.method === 'POST') {
         }
     }
 
+    if (action === 'set_schedule') {
+        const fecha = formData.get('fecha_horario') as string;
+        const inicio = formData.get('inicio_horario') as string;
+        const fin = formData.get('fin_horario') as string;
+        const motivo = formData.get('motivo_horario') as string;
+        if (fecha && inicio && fin) {
+            const { data: existe } = await supabase.from('dias_especiales').select('id').eq('fecha', fecha).eq('negocio_id', MI_NEGOCIO).single();
+            if (!existe) {
+                const { error } = await supabase.from('dias_especiales').insert([{ 
+                    negocio_id: MI_NEGOCIO,
+                    fecha,
+                    cerrado: false,
+                    motivo: motivo || 'Horario especial',
+                    hora_inicio: inicio,
+                    hora_fin: fin
+                }]);
+                if (error) mensajeError = "Error al guardar horario especial.";
+                else mensajeExito = "Horario especial guardado correctamente.";
+            } else {
+                const { error } = await supabase.from('dias_especiales').update({ 
+                    cerrado: false,
+                    motivo: motivo || 'Horario especial',
+                    hora_inicio: inicio,
+                    hora_fin: fin
+                }).eq('id', existe.id).eq('negocio_id', MI_NEGOCIO);
+                if (error) mensajeError = "Error al actualizar horario especial.";
+                else mensajeExito = "Horario especial actualizado correctamente.";
+            }
+        } else {
+            mensajeError = "Por favor complete fecha, inicio y fin para el horario especial.";
+        }
+    }
+
     if (action === 'close_day') {
         const fecha = formData.get('fecha_especial') as string;
         const motivo = formData.get('motivo') as string;
@@ -249,7 +282,33 @@ const listaServicios = serviciosDB || [];
 
         <hr class="divider" />
 
-        <h2 class="section-title">🔒 Cerrar Días Completos</h2>
+        <h2 class="section-title">� Horario Especial por Fecha</h2>
+        <div class="card-config" style="margin-bottom: 30px;">
+            <form method="POST" class="form-config">
+                <input type="hidden" name="action" value="set_schedule">
+                <div class="config-row">
+                    <div class="input-group">
+                        <label>Fecha</label>
+                        <input type="text" id="admin-fecha-horario" name="fecha_horario" required placeholder="Seleccionar..." class="input-admin" readonly>
+                    </div>
+                    <div class="input-group">
+                        <label>Inicio</label>
+                        <input type="time" name="inicio_horario" required class="input-admin" step="1800">
+                    </div>
+                    <div class="input-group">
+                        <label>Fin</label>
+                        <input type="time" name="fin_horario" required class="input-admin" step="1800">
+                    </div>
+                    <div class="input-group">
+                        <label>Motivo (opcional)</label>
+                        <input type="text" name="motivo_horario" placeholder="Ej: Sábado especial" class="input-admin">
+                    </div>
+                    <button type="submit" class="btn-save" style="background: #3498db; color: white;">GUARDAR HORARIO</button>
+                </div>
+            </form>
+        </div>
+
+        <h2 class="section-title">�🔒 Cerrar Días Completos</h2>
         <div class="card-config">
             <form method="POST" class="form-config">
                 <input type="hidden" name="action" value="close_day">
@@ -269,10 +328,14 @@ const listaServicios = serviciosDB || [];
                 {listaDias.map(dia => (
                     <div class="dia-card">
                         <span class="dia-fecha">{dia.fecha.split('-').reverse().join('/')}</span>
-                        <span class="dia-estado cerrado">CERRADO ({dia.motivo || 'Sin motivo'})</span>
+                        {dia.cerrado ? (
+                            <span class="dia-estado cerrado">CERRADO ({dia.motivo || 'Sin motivo'})</span>
+                        ) : (
+                            <span class="dia-estado abierto">HORARIO: {dia.hora_inicio || '??'} a {dia.hora_fin || '??'} ({dia.motivo || 'Especial'})</span>
+                        )}
                         <form method="POST" style="margin-top: 5px;">
                             <input type="hidden" name="action" value="delete_day"><input type="hidden" name="id_dia" value={dia.id}>
-                            <button type="submit" class="btn-small-delete">ABRIR NUEVAMENTE</button>
+                            <button type="submit" class="btn-small-delete">ELIMINAR REGLA</button>
                         </form>
                     </div>
                 ))}
@@ -288,6 +351,7 @@ const listaServicios = serviciosDB || [];
         const config = { locale: "es", dateFormat: "Y-m-d", minDate: "today", disableMobile: "true" };
         flatpickr("#admin-fecha-picker", config);
         flatpickr("#admin-fecha-descanso", config);
+        flatpickr("#admin-fecha-horario", config);
 
         const botonesBorrar = document.querySelectorAll('.accion-borrar');
         botonesBorrar.forEach(boton => {
@@ -368,6 +432,7 @@ const listaServicios = serviciosDB || [];
     .lista-dias-especiales { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
     .dia-card { display: flex; justify-content: space-between; align-items: center; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 10px; }
     .dia-estado.cerrado { color: var(--danger); font-weight: bold; }
+    .dia-estado.abierto { color: #3498db; font-weight: bold; }
 
     /* Celulares */
     @media (max-width: 768px) {

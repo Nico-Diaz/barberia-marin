@@ -16,13 +16,12 @@ const servicios = serviciosDB || [];
 
 const hoyStr = new Date().toISOString().split('T')[0];
 
-// 3. Traer SOLO los días cerrados de ESTA barbería
+// 3. Traer los días especiales de ESTA barbería (cierres y horarios especiales)
 const { data: diasDB } = await supabase
     .from('dias_especiales')
-    .select('fecha, motivo, cerrado')
+    .select('fecha, motivo, cerrado, hora_inicio, hora_fin')
     .eq('negocio_id', MI_NEGOCIO)
-    .gte('fecha', hoyStr)
-    .eq('cerrado', true);
+    .gte('fecha', hoyStr);
 const diasCerrados = diasDB || [];
 
 // 4. Traer SOLO los turnos ocupados de ESTA barbería
@@ -96,7 +95,8 @@ const turnosOcupados = turnosDB || [];
         const btnSubmit = document.getElementById('btn-submit');
 
         const hoy = new Date();
-        const hoyStrLocal = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0');
+        const hoyArgentina = new Date(hoy.toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires' }));
+        const hoyStrLocal = hoyArgentina.getFullYear() + '-' + String(hoyArgentina.getMonth() + 1).padStart(2, '0') + '-' + String(hoyArgentina.getDate()).padStart(2, '0');
         fechaInput.min = hoyStrLocal;
 
         fechaInput.addEventListener('change', (e) => {
@@ -108,19 +108,9 @@ const turnosOcupados = turnosDB || [];
 
             if (!fechaSeleccionada) return;
 
-            const diaCerrado = diasCerrados.find(d => d.fecha === fechaSeleccionada);
-            if (diaCerrado) {
-                mensajeDia.textContent = `❌ Cerrado: ${diaCerrado.motivo || 'Feriado'}`;
-                mensajeDia.style.color = '#ff6b6b';
-                horaSelect.innerHTML = '<option value="" disabled selected>No disponible</option>';
-                btnSubmit.disabled = true;
-                return;
-            }
-
+            const reglaEspecial = diasCerrados.find(d => d.fecha === fechaSeleccionada);
             const fechaObj = new Date(fechaSeleccionada + 'T12:00:00');
             const diaSemana = fechaObj.getDay();
-
-            let apertura = 0; let cierre = 0;
 
             if (diaSemana !== 6) { // Solo sábados
                 mensajeDia.textContent = '❌ Solo abierto los sábados.';
@@ -128,21 +118,39 @@ const turnosOcupados = turnosDB || [];
                 horaSelect.innerHTML = '<option value="" disabled selected>Cerrado</option>';
                 btnSubmit.disabled = true;
                 return;
-            } else {
-                // abrimos a las 9 y el último turno posible es 21:30
-                apertura = 9;
-                cierre = 21.5; // usamos media hora como decimal para que el bucle incluya 21:30
-                mensajeDia.textContent = 'Horario: 9:00 a 21:30hs';
             }
-            
+
+            let apertura = 11;
+            let cierre = 20; // por defecto sábado: 11:00 a 20:00
+            let mensajeConfig = 'Horario: 11:00 a 20:00hs';
+
+            if (reglaEspecial) {
+                if (reglaEspecial.cerrado) {
+                    mensajeDia.textContent = `❌ Cerrado: ${reglaEspecial.motivo || 'Feriado'}`;
+                    mensajeDia.style.color = '#ff6b6b';
+                    horaSelect.innerHTML = '<option value="" disabled selected>No disponible</option>';
+                    btnSubmit.disabled = true;
+                    return;
+                }
+
+                if (reglaEspecial.hora_inicio && reglaEspecial.hora_fin) {
+                    const [h1, m1] = reglaEspecial.hora_inicio.split(':').map(Number);
+                    const [h2, m2] = reglaEspecial.hora_fin.split(':').map(Number);
+                    apertura = h1 + m1 / 60;
+                    cierre = h2 + m2 / 60;
+                    mensajeConfig = `Horario especial: ${reglaEspecial.hora_inicio} a ${reglaEspecial.hora_fin}`;
+                }
+            }
+
+            mensajeDia.textContent = mensajeConfig;
             mensajeDia.style.color = '#2ecc71';
 
             horaSelect.innerHTML = '<option value="" disabled selected>Seleccione hora</option>';
             const turnosDelDia = turnosOcupados.filter(t => t.fecha === fechaSeleccionada);
             
             const esHoy = fechaSeleccionada === hoyStrLocal;
-            const horaActual = hoy.getHours();
-            const minActual = hoy.getMinutes();
+            const horaActual = hoyArgentina.getHours();
+            const minActual = hoyArgentina.getMinutes();
 
             for (let h = apertura; h < cierre; h++) {
                 for (let m = 0; m < 60; m += 30) {
@@ -151,7 +159,7 @@ const turnosOcupados = turnosDB || [];
 
                     const horaFomateada = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
                     
-                    if (esHoy && (h < horaActual || (h === horaActual && m <= minActual))) continue; 
+                    if (esHoy && ((h * 60 + m) < (horaActual * 60 + minActual + 30))) continue;
 
                     const estaOcupado = turnosDelDia.some(t => t.hora.startsWith(horaFomateada));
                     const option = document.createElement('option');
