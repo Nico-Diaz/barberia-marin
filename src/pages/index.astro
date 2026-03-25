@@ -7,6 +7,7 @@ import { Resend } from 'resend';
 let mensajeError = "";
 
 if (Astro.request.method === 'POST') {
+  console.log('Procesando POST request');
   const formData = await Astro.request.formData();
   const nombre = formData.get('nombre') as string;
   const apellido = formData.get('apellido') as string;
@@ -97,13 +98,16 @@ if (Astro.request.method === 'POST') {
         if (errorInsert) throw errorInsert;
 
         // 6. ENVIAR EMAIL (Resend)
+        console.log('Intentando enviar email con Resend');
         try {
             const apiKey = import.meta.env.RESEND_API_KEY;
             if (!apiKey) throw new Error('Falta RESEND_API_KEY en el .env');
 
             const resend = new Resend(apiKey);
-            const fromEmail = import.meta.env.RESEND_FROM || 'no-reply@barberia-marin.com';
+            // Usa un dominio verificado en Resend, o 'onboarding@resend.dev' para pruebas
+            const fromEmail = import.meta.env.RESEND_FROM || 'onboarding@resend.dev';
 
+            console.log('Enviando email desde:', fromEmail, 'a:', 'ezegasflo@gmail.com');
             const result = await resend.emails.send({
                 from: fromEmail,
                 to: 'ezegasflo@gmail.com',
@@ -120,11 +124,11 @@ if (Astro.request.method === 'POST') {
                 </div>`
             });
 
-            console.log('Resend email enviado:', result);
+            console.log('Resend email enviado exitosamente:', result);
         } catch (e) {
             console.error('Error email Resend:', e);
-            // Si estás probando local y no te llega, esto ayuda a diagnosticar de inmediato.
-            mensajeError = mensajeError || 'No se pudo enviar el email de confirmación (consulta la consola).';
+            // En producción, esto podría fallar silenciosamente, así que logueamos
+            mensajeError = mensajeError || 'No se pudo enviar el email de confirmación (consulta logs del servidor).';
         }
 
         return Astro.redirect(`/exito?nombre=${nombre}&fecha=${fecha}&hora=${hora}`);
