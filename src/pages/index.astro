@@ -60,7 +60,12 @@ if (Astro.request.method === 'POST') {
     let esHorarioValido = false;
     let inicioStr = ""; let finStr = ""; let mensajeRango = "";
 
-    const { data: reglaDia } = await supabase.from('dias_especiales').select('*').eq('fecha', fecha).single();
+    const { data: reglaDia, error: reglaDiaError } = await supabase.from('dias_especiales')
+        .select('*')
+        .eq('fecha', fecha)
+        .maybeSingle();
+
+    if (reglaDiaError) throw { message: "Error al consultar horarios especiales." };
 
     if (reglaDia) {
         if (reglaDia.cerrado) mensajeError = "Lo sentimos, este día la barbería permanecerá cerrada.";

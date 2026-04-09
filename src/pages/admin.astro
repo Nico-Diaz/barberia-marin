@@ -97,9 +97,28 @@ if (Astro.request.method === 'POST') {
         const inicio = formData.get('inicio_horario') as string;
         const fin = formData.get('fin_horario') as string;
         const motivo = formData.get('motivo_horario') as string;
-        if (fecha && inicio && fin) {
-            const { data: existe } = await supabase.from('dias_especiales').select('id').eq('fecha', fecha).eq('negocio_id', MI_NEGOCIO).single();
-            if (!existe) {
+
+        const horaInicio = inicio ? inicio.split(':').map(Number) : [];
+        const horaFin = fin ? fin.split(':').map(Number) : [];
+        const minutosInicio = horaInicio.length === 2 ? horaInicio[0] * 60 + horaInicio[1] : null;
+        const minutosFin = horaFin.length === 2 ? horaFin[0] * 60 + horaFin[1] : null;
+
+        if (!fecha || !inicio || !fin) {
+            mensajeError = "Por favor complete fecha, inicio y fin para el horario especial.";
+        } else if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) {
+            mensajeError = "Fecha inválida. Use el formato AAAA-MM-DD.";
+        } else if (minutosInicio === null || minutosFin === null) {
+            mensajeError = "Formato de hora inválido. Seleccione una hora válida.";
+        } else if (minutosInicio >= minutosFin) {
+            mensajeError = "El horario de inicio debe ser anterior al horario de fin.";
+        } else {
+            const { data: existe, error: existeError } = await supabase.from('dias_especiales')
+                .select('id')
+                .eq('fecha', fecha)
+                .eq('negocio_id', MI_NEGOCIO)
+                .maybeSingle();
+            if (existeError) mensajeError = "Error al consultar el horario especial.";
+            else if (!existe) {
                 const { error } = await supabase.from('dias_especiales').insert([{ 
                     negocio_id: MI_NEGOCIO,
                     fecha,
@@ -120,8 +139,6 @@ if (Astro.request.method === 'POST') {
                 if (error) mensajeError = "Error al actualizar horario especial.";
                 else mensajeExito = "Horario especial actualizado correctamente.";
             }
-        } else {
-            mensajeError = "Por favor complete fecha, inicio y fin para el horario especial.";
         }
     }
 
@@ -129,8 +146,13 @@ if (Astro.request.method === 'POST') {
         const fecha = formData.get('fecha_especial') as string;
         const motivo = formData.get('motivo') as string;
         if (fecha) {
-            const { data: existe } = await supabase.from('dias_especiales').select('id').eq('fecha', fecha).eq('negocio_id', MI_NEGOCIO).single();
-            if(!existe) {
+            const { data: existe, error: existeError } = await supabase.from('dias_especiales')
+                .select('id')
+                .eq('fecha', fecha)
+                .eq('negocio_id', MI_NEGOCIO)
+                .maybeSingle();
+            if (existeError) mensajeError = "Error al consultar el día especial.";
+            else if(!existe) {
                 await supabase.from('dias_especiales').insert([{ 
                     negocio_id: MI_NEGOCIO, fecha, cerrado: true, motivo: motivo || 'Cerrado'
                 }]);
@@ -146,7 +168,6 @@ if (Astro.request.method === 'POST') {
         if (idDia) await supabase.from('dias_especiales').delete().eq('id', idDia).eq('negocio_id', MI_NEGOCIO);
     }
 }
-
 const fechaGlobal = new Date();
 const ahoraArgentina = new Date(fechaGlobal.getTime() - (3 * 60 * 60 * 1000));
 const hoy = ahoraArgentina.toISOString().split('T')[0];
@@ -232,7 +253,7 @@ const listaServicios = serviciosDB || [];
                     <thead><tr><th>FECHA</th><th>HORARIO</th><th>SERVICIO</th><th>CLIENTE</th><th>WHATSAPP</th><th>ACCIÓN</th></tr></thead>
                     <tbody>
                         {listaTurnos.map((turno) => (
-                            <tr class={`${turno.fecha === hoy ? "es-hoy" : ""} ${turno.cliente_nombre === 'DESCANSO' ? 'fila-descanso' : ''}`}>
+                            <tr class="turno-row">
                                 
                                 {turno.cliente_nombre === 'DESCANSO' ? (
                                     <>
@@ -282,14 +303,14 @@ const listaServicios = serviciosDB || [];
 
         <hr class="divider" />
 
-        <h2 class="section-title">� Horario Especial por Fecha</h2>
+        <h2 class="section-title">📅 Horario Especial por Fecha</h2>
         <div class="card-config" style="margin-bottom: 30px;">
             <form method="POST" class="form-config">
                 <input type="hidden" name="action" value="set_schedule">
                 <div class="config-row">
                     <div class="input-group">
                         <label>Fecha</label>
-                        <input type="text" id="admin-fecha-horario" name="fecha_horario" required placeholder="Seleccionar..." class="input-admin" readonly>
+                        <input type="date" id="admin-fecha-horario" name="fecha_horario" required class="input-admin">
                     </div>
                     <div class="input-group">
                         <label>Inicio</label>
@@ -308,7 +329,7 @@ const listaServicios = serviciosDB || [];
             </form>
         </div>
 
-        <h2 class="section-title">�🔒 Cerrar Días Completos</h2>
+        <h2 class="section-title">🔒 Cerrar Días Completos</h2>
         <div class="card-config">
             <form method="POST" class="form-config">
                 <input type="hidden" name="action" value="close_day">
@@ -344,27 +365,7 @@ const listaServicios = serviciosDB || [];
     </div>
 </Layout>
 
-<script is:inline src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script is:inline src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
-<script is:inline>
-    document.addEventListener('DOMContentLoaded', () => {
-        const config = { locale: "es", dateFormat: "Y-m-d", minDate: "today", disableMobile: "true" };
-        flatpickr("#admin-fecha-picker", config);
-        flatpickr("#admin-fecha-descanso", config);
-        flatpickr("#admin-fecha-horario", config);
 
-        const botonesBorrar = document.querySelectorAll('.accion-borrar');
-        botonesBorrar.forEach(boton => {
-            boton.addEventListener('click', (e) => {
-                const id = e.target.getAttribute('data-id');
-                const nombre = e.target.getAttribute('data-nombre');
-                if (confirm(`¿Estás seguro de que deseas cancelar el turno de ${nombre}?`)) {
-                    document.getElementById(`form-borrar-${id}`).submit();
-                }
-            });
-        });
-    });
-</script>
 
 <style>
     /* Estilos Base Mantenidos */
