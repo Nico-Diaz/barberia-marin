@@ -455,3 +455,43 @@ const listaServicios = serviciosDB || [];
         .config-row, .input-group { flex-direction: column; width: 100%; }
     }
 </style>
+
+<script>
+    // Cargar flatpickr desde CDN
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/flatpickr';
+    script.onload = () => {
+        // Inicializar flatpickr para fecha del descanso
+        flatpickr('#admin-fecha-descanso', {
+            dateFormat: 'Y-m-d',
+            minDate: 'today',
+            locale: 'es'
+        });
+
+        // Inicializar flatpickr para cerrar día
+        flatpickr('#admin-fecha-picker', {
+            dateFormat: 'Y-m-d',
+            minDate: 'today',
+            locale: 'es'
+        });
+    };
+    document.head.appendChild(script);
+
+    // Manejar botones de borrar turnos
+    document.querySelectorAll('.accion-borrar').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            const nombre = btn.dataset.nombre;
+            const id = btn.dataset.id;
+            if (confirm(`¿Estás seguro de que quieres borrar el turno de ${nombre}?`)) {
+                const form = document.getElementById(`form-borrar-${id}`);
+                if (form) {
+                    // Crear un input type="submit" temporal para enviar el formulario
+                    const submitBtn = form.querySelector('button');
+                    submitBtn.type = 'submit';
+                    form.submit();
+                }
+            }
+        });
+    });
+</script>
