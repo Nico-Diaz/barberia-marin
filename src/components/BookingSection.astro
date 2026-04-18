@@ -120,8 +120,8 @@ const turnosOcupados = turnosDB || [];
                 return;
             }
 
-            let apertura = 11;
-            let cierre = 20.01; // por defecto sábado: 11:00 a 20:00 (incluye 20:00)
+            let inicioMinutos = 11 * 60;
+            let finMinutos = 20 * 60; // por defecto sábado: 11:00 a 20:00 (incluye 20:00)
             let mensajeConfig = 'Horario: 11:00 a 20:00hs';
 
             if (reglaEspecial) {
@@ -136,8 +136,8 @@ const turnosOcupados = turnosDB || [];
                 if (reglaEspecial.hora_inicio && reglaEspecial.hora_fin) {
                     const [h1, m1] = reglaEspecial.hora_inicio.split(':').map(Number);
                     const [h2, m2] = reglaEspecial.hora_fin.split(':').map(Number);
-                    apertura = h1 + m1 / 60;
-                    cierre = h2 + m2 / 60;
+                    inicioMinutos = h1 * 60 + m1;
+                    finMinutos = h2 * 60 + m2;
                     mensajeConfig = `Horario especial: ${reglaEspecial.hora_inicio} a ${reglaEspecial.hora_fin}`;
                 }
             }
@@ -152,22 +152,20 @@ const turnosOcupados = turnosDB || [];
             const horaActual = hoyArgentina.getHours();
             const minActual = hoyArgentina.getMinutes();
 
-            for (let h = apertura; h < cierre; h++) {
-                for (let m = 0; m < 60; m += 30) {
-                    // si estamos en la última hora y ya pasamos de 30 minutos, salimos
-                    if (h === Math.floor(cierre) && m > (cierre % 1) * 60) continue;
+            for (let mins = inicioMinutos; mins <= finMinutos; mins += 30) {
+                let h = Math.floor(mins / 60);
+                let m = mins % 60;
 
-                    const horaFomateada = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
-                    
-                    if (esHoy && ((h * 60 + m) < (horaActual * 60 + minActual + 30))) continue;
+                const horaFomateada = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+                
+                if (esHoy && (mins < (horaActual * 60 + minActual + 30))) continue;
 
-                    const estaOcupado = turnosDelDia.some(t => t.hora.startsWith(horaFomateada));
-                    const option = document.createElement('option');
-                    option.value = horaFomateada;
-                    option.textContent = horaFomateada + (estaOcupado ? ' (Ocupado)' : '');
-                    if (estaOcupado) option.disabled = true;
-                    horaSelect.appendChild(option);
-                }
+                const estaOcupado = turnosDelDia.some(t => t.hora.startsWith(horaFomateada));
+                const option = document.createElement('option');
+                option.value = horaFomateada;
+                option.textContent = horaFomateada + (estaOcupado ? ' (Ocupado)' : '');
+                if (estaOcupado) option.disabled = true;
+                horaSelect.appendChild(option);
             }
             horaSelect.disabled = false;
         });
