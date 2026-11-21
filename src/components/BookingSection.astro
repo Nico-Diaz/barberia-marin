@@ -1,40 +1,35 @@
 ---
-import { supabase } from '../lib/supabase';
+import { obtenerDatos, type Datos } from '../lib/sheets';
 
 const { errorBackend } = Astro.props;
 
-// 1. Definimos cuál es tu negocio leyendo el .env
-const MI_NEGOCIO = import.meta.env.PUBLIC_NEGOCIO_ID;
+// 1. Traer servicios, días especiales y turnos desde la hoja (una sola llamada)
+let datos: Datos = { turnos: [], servicios: [], dias_especiales: [] };
+let errorCarga = "";
+try {
+    datos = await obtenerDatos();
+} catch (e) {
+    console.error('Error leyendo Google Sheets:', e);
+    errorCarga = "No pudimos cargar la agenda. Probá de nuevo en unos minutos.";
+}
 
-// 2. Traer SOLO los servicios de ESTA barbería
-const { data: serviciosDB } = await supabase
-    .from('servicios')
-    .select('*')
-    .eq('negocio_id', MI_NEGOCIO)
-    .order('precio', { ascending: true });
-const servicios = serviciosDB || [];
+const servicios = datos.servicios;
 
 const hoyStr = new Date().toISOString().split('T')[0];
 
-// 3. Traer los días especiales de ESTA barbería (cierres y horarios especiales)
-const { data: diasDB } = await supabase
-    .from('dias_especiales')
-    .select('fecha, motivo, cerrado, hora_inicio, hora_fin')
-    .eq('negocio_id', MI_NEGOCIO)
-    .gte('fecha', hoyStr);
-const diasCerrados = diasDB || [];
+// 2. Días especiales (cierres y horarios especiales) desde hoy
+const diasCerrados = datos.dias_especiales
+    .filter(d => d.fecha >= hoyStr)
+    .map(({ fecha, motivo, cerrado, hora_inicio, hora_fin }) => ({ fecha, motivo, cerrado, hora_inicio, hora_fin }));
 
-// 4. Traer SOLO los turnos ocupados de ESTA barbería
-const { data: turnosDB } = await supabase
-    .from('turnos')
-    .select('fecha, hora')
-    .eq('negocio_id', MI_NEGOCIO)
-    .gte('fecha', hoyStr);
-const turnosOcupados = turnosDB || [];
+// 3. Turnos ocupados desde hoy (solo fecha y hora: no mandamos datos de clientes al navegador)
+const turnosOcupados = datos.turnos
+    .filter(t => t.fecha >= hoyStr)
+    .map(({ fecha, hora }) => ({ fecha, hora }));
 ---
 
 <section class="booking-section">
-    {errorBackend && <div class="error-banner">⚠️ {errorBackend}</div>}
+    {(errorBackend || errorCarga) && <div class="error-banner">⚠️ {errorBackend || errorCarga}</div>}
 
     <form method="POST" class="booking-form" id="form-reserva">
         

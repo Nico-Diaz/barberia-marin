@@ -24,3 +24,6 @@ pnpm-debug.log*
 .idea/
 .vercel
 .env*.local
+
+# backups de la migración (contienen datos de clientes)
+migracion-backup/

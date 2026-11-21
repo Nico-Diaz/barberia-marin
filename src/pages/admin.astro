@@ -1,185 +1,174 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { supabase } from '../lib/supabase';
+import { obtenerDatos, insertar, actualizar, borrar, type Datos } from '../lib/sheets';
+import { sesionValida, cerrarSesion } from '../lib/auth';
 
 export const prerender = false;
 Astro.response.headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
 
-const accessToken = Astro.cookies.get("sb-access-token");
-const refreshToken = Astro.cookies.get("sb-refresh-token");
-if (!accessToken || !refreshToken) return Astro.redirect('/login');
+if (!sesionValida(Astro.cookies)) return Astro.redirect('/login');
 
-const { data: { user }, error: authError } = await supabase.auth.getUser(accessToken.value);
-if (authError || !user) return Astro.redirect('/login');
-
-const MI_NEGOCIO = import.meta.env.PUBLIC_NEGOCIO_ID;
+const MI_NEGOCIO = import.meta.env.PUBLIC_NEGOCIO_ID ?? '';
 let mensajeExito = "";
 let mensajeError = "";
+
+// Ejecuta una operación sobre la hoja y devuelve false si falló
+async function intentar(fn: () => Promise<unknown>) {
+    try { await fn(); return true; }
+    catch (e) { console.error('Error Google Sheets:', e); return false; }
+}
 
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
     const action = formData.get('action');
 
     if (action === 'logout') {
-        await supabase.auth.signOut();
-        Astro.cookies.delete("sb-access-token", { path: "/" });
-        Astro.cookies.delete("sb-refresh-token", { path: "/" });
+        cerrarSesion(Astro.cookies);
         return Astro.redirect('/login');
     }
 
     if (action === 'update_price') {
-        const idServicio = formData.get('id_servicio');
-        const nuevoPrecio = formData.get('nuevo_precio');
+        const idServicio = formData.get('id_servicio') as string;
+        const nuevoPrecio = formData.get('nuevo_precio') as string;
         if (idServicio && nuevoPrecio) {
-            const { error } = await supabase.from('servicios')
-                .update({ precio: nuevoPrecio })
-                .eq('id', idServicio).eq('negocio_id', MI_NEGOCIO);
-            if (error) mensajeError = "Error al actualizar precio.";
+            const ok = await intentar(() => actualizar('servicios', idServicio, { precio: nuevoPrecio }));
+            if (!ok) mensajeError = "Error al actualizar precio.";
             else mensajeExito = "Precio actualizado.";
         }
     }
 
     if (action === 'add_service') {
         const nombre = formData.get('new_nombre') as string;
-        const precio = formData.get('new_precio');
+        const precio = formData.get('new_precio') as string;
         if (nombre && precio) {
-            const { error } = await supabase.from('servicios').insert([{ 
-                negocio_id: MI_NEGOCIO, nombre: nombre, precio: precio 
-            }]);
-            if (error) mensajeError = "Error al agregar servicio.";
+            const ok = await intentar(() => insertar('servicios', { negocio_id: MI_NEGOCIO, nombre, precio }));
+            if (!ok) mensajeError = "Error al agregar servicio.";
             else mensajeExito = "Servicio agregado.";
         }
     }
 
     if (action === 'delete_service') {
-        const idToDelete = formData.get('id_servicio');
+        const idToDelete = formData.get('id_servicio') as string;
         if (idToDelete) {
-            await supabase.from('servicios').delete().eq('id', idToDelete).eq('negocio_id', MI_NEGOCIO);
-            mensajeExito = "Servicio eliminado.";
+            const ok = await intentar(() => borrar('servicios', idToDelete));
+            if (!ok) mensajeError = "Error al eliminar servicio.";
+            else mensajeExito = "Servicio eliminado.";
         }
     }
 
     if (action === 'delete') {
-        const id = formData.get('id');
-        if (id) await supabase.from('turnos').delete().eq('id', id).eq('negocio_id', MI_NEGOCIO);
+        const id = formData.get('id') as string;
+        if (id && !(await intentar(() => borrar('turnos', id)))) mensajeError = "Error al borrar el turno.";
     }
 
     if (action === 'update_hora') {
-        const id = formData.get('id');
-        const hora = formData.get('nueva_hora');
-        if (id && hora) await supabase.from('turnos').update({ hora }).eq('id', id).eq('negocio_id', MI_NEGOCIO);
+        const id = formData.get('id') as string;
+        const hora = formData.get('nueva_hora') as string;
+        if (id && hora && !(await intentar(() => actualizar('turnos', id, { hora })))) mensajeError = "Error al cambiar el horario.";
     }
 
-    // --- NUEVA LÓGICA: AGREGAR DESCANSO ---
+    // --- AGREGAR DESCANSO ---
     if (action === 'add_break') {
         const fecha = formData.get('fecha_break') as string;
         const hora = formData.get('hora_break') as string;
         if (fecha && hora) {
             // Creamos un turno "falso" para bloquear el horario en la web
-            const { error } = await supabase.from('turnos').insert([{ 
-                negocio_id: MI_NEGOCIO, 
-                fecha: fecha, 
-                hora: hora,
+            const ok = await intentar(() => insertar('turnos', {
+                negocio_id: MI_NEGOCIO,
+                fecha,
+                hora,
                 servicio: 'Descanso',
                 profesional: 'Ezequiel',
                 cliente_nombre: 'DESCANSO', // Palabra clave para detectarlo
                 cliente_apellido: '-',
                 cliente_telefono: null,
                 estado: 'bloqueado'
-            }]);
-            if (error) mensajeError = "Error al bloquear horario.";
+            }));
+            if (!ok) mensajeError = "Error al bloquear horario.";
             else mensajeExito = "Horario bloqueado por descanso.";
         }
     }
 
-    if (action === 'set_schedule') {
-        const fecha = formData.get('fecha_horario') as string;
-        const inicio = formData.get('inicio_horario') as string;
-        const fin = formData.get('fin_horario') as string;
-        const motivo = formData.get('motivo_horario') as string;
+    if (action === 'set_schedule' || action === 'close_day') {
+        // Para estas acciones necesitamos saber si ya hay una regla para esa fecha
+        let dias: Datos['dias_especiales'] | null = null;
+        try { dias = (await obtenerDatos()).dias_especiales; }
+        catch (e) { console.error(e); }
 
-        const horaInicio = inicio ? inicio.split(':').map(Number) : [];
-        const horaFin = fin ? fin.split(':').map(Number) : [];
-        const minutosInicio = horaInicio.length === 2 ? horaInicio[0] * 60 + horaInicio[1] : null;
-        const minutosFin = horaFin.length === 2 ? horaFin[0] * 60 + horaFin[1] : null;
+        if (action === 'set_schedule') {
+            const fecha = formData.get('fecha_horario') as string;
+            const inicio = formData.get('inicio_horario') as string;
+            const fin = formData.get('fin_horario') as string;
+            const motivo = formData.get('motivo_horario') as string;
 
-        if (!fecha || !inicio || !fin) {
-            mensajeError = "Por favor complete fecha, inicio y fin para el horario especial.";
-        } else if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) {
-            mensajeError = "Fecha inválida. Use el formato AAAA-MM-DD.";
-        } else if (minutosInicio === null || minutosFin === null) {
-            mensajeError = "Formato de hora inválido. Seleccione una hora válida.";
-        } else if (minutosInicio >= minutosFin) {
-            mensajeError = "El horario de inicio debe ser anterior al horario de fin.";
-        } else {
-            const { data: existe, error: existeError } = await supabase.from('dias_especiales')
-                .select('id')
-                .eq('fecha', fecha)
-                .eq('negocio_id', MI_NEGOCIO)
-                .maybeSingle();
-            if (existeError) mensajeError = "Error al consultar el horario especial.";
-            else if (!existe) {
-                const { error } = await supabase.from('dias_especiales').insert([{ 
-                    negocio_id: MI_NEGOCIO,
-                    fecha,
-                    cerrado: false,
-                    motivo: motivo || 'Horario especial',
-                    hora_inicio: inicio,
-                    hora_fin: fin
-                }]);
-                if (error) mensajeError = "Error al guardar horario especial.";
-                else mensajeExito = "Horario especial guardado correctamente.";
+            const horaInicio = inicio ? inicio.split(':').map(Number) : [];
+            const horaFin = fin ? fin.split(':').map(Number) : [];
+            const minutosInicio = horaInicio.length === 2 ? horaInicio[0] * 60 + horaInicio[1] : null;
+            const minutosFin = horaFin.length === 2 ? horaFin[0] * 60 + horaFin[1] : null;
+
+            if (!fecha || !inicio || !fin) {
+                mensajeError = "Por favor complete fecha, inicio y fin para el horario especial.";
+            } else if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(fecha)) {
+                mensajeError = "Fecha inválida. Use el formato AAAA-MM-DD.";
+            } else if (minutosInicio === null || minutosFin === null) {
+                mensajeError = "Formato de hora inválido. Seleccione una hora válida.";
+            } else if (minutosInicio >= minutosFin) {
+                mensajeError = "El horario de inicio debe ser anterior al horario de fin.";
+            } else if (!dias) {
+                mensajeError = "Error al consultar el horario especial.";
             } else {
-                const { error } = await supabase.from('dias_especiales').update({ 
-                    cerrado: false,
-                    motivo: motivo || 'Horario especial',
-                    hora_inicio: inicio,
-                    hora_fin: fin
-                }).eq('id', existe.id).eq('negocio_id', MI_NEGOCIO);
-                if (error) mensajeError = "Error al actualizar horario especial.";
-                else mensajeExito = "Horario especial actualizado correctamente.";
+                const existe = dias.find(d => d.fecha === fecha);
+                const valores = { cerrado: false, motivo: motivo || 'Horario especial', hora_inicio: inicio, hora_fin: fin };
+                if (!existe) {
+                    const ok = await intentar(() => insertar('dias_especiales', { negocio_id: MI_NEGOCIO, fecha, ...valores }));
+                    if (!ok) mensajeError = "Error al guardar horario especial.";
+                    else mensajeExito = "Horario especial guardado correctamente.";
+                } else {
+                    const ok = await intentar(() => actualizar('dias_especiales', existe.id, valores));
+                    if (!ok) mensajeError = "Error al actualizar horario especial.";
+                    else mensajeExito = "Horario especial actualizado correctamente.";
+                }
             }
         }
-    }
 
-    if (action === 'close_day') {
-        const fecha = formData.get('fecha_especial') as string;
-        const motivo = formData.get('motivo') as string;
-        if (fecha) {
-            const { data: existe, error: existeError } = await supabase.from('dias_especiales')
-                .select('id')
-                .eq('fecha', fecha)
-                .eq('negocio_id', MI_NEGOCIO)
-                .maybeSingle();
-            if (existeError) mensajeError = "Error al consultar el día especial.";
-            else if(!existe) {
-                await supabase.from('dias_especiales').insert([{ 
-                    negocio_id: MI_NEGOCIO, fecha, cerrado: true, motivo: motivo || 'Cerrado'
-                }]);
-                mensajeExito = "Día cerrado correctamente.";
-            } else {
-                mensajeError = "Ese día ya estaba cerrado.";
+        if (action === 'close_day') {
+            const fecha = formData.get('fecha_especial') as string;
+            const motivo = formData.get('motivo') as string;
+            if (fecha) {
+                if (!dias) mensajeError = "Error al consultar el día especial.";
+                else if (!dias.some(d => d.fecha === fecha)) {
+                    const ok = await intentar(() => insertar('dias_especiales', {
+                        negocio_id: MI_NEGOCIO, fecha, cerrado: true, motivo: motivo || 'Cerrado', hora_inicio: '', hora_fin: ''
+                    }));
+                    if (!ok) mensajeError = "Error al cerrar el día.";
+                    else mensajeExito = "Día cerrado correctamente.";
+                } else {
+                    mensajeError = "Ese día ya estaba cerrado.";
+                }
             }
         }
     }
 
     if (action === 'delete_day') {
-        const idDia = formData.get('id_dia');
-        if (idDia) await supabase.from('dias_especiales').delete().eq('id', idDia).eq('negocio_id', MI_NEGOCIO);
+        const idDia = formData.get('id_dia') as string;
+        if (idDia && !(await intentar(() => borrar('dias_especiales', idDia)))) mensajeError = "Error al eliminar la regla.";
     }
 }
 const fechaGlobal = new Date();
 const ahoraArgentina = new Date(fechaGlobal.getTime() - (3 * 60 * 60 * 1000));
 const hoy = ahoraArgentina.toISOString().split('T')[0];
 
-const { data: turnos } = await supabase.from('turnos').select('*').eq('negocio_id', MI_NEGOCIO).order('fecha', { ascending: true }).order('hora', { ascending: true });
-const listaTurnos = turnos || [];
+let datos: Datos = { turnos: [], servicios: [], dias_especiales: [] };
+try {
+    datos = await obtenerDatos();
+} catch (e) {
+    console.error('Error leyendo Google Sheets:', e);
+    mensajeError = mensajeError || "No se pudo leer la hoja de Google Sheets. Revisá SHEETS_API_URL / SHEETS_API_SECRET.";
+}
 
-const { data: diasEspeciales } = await supabase.from('dias_especiales').select('*').eq('negocio_id', MI_NEGOCIO).gte('fecha', hoy).order('fecha', { ascending: true });
-const listaDias = diasEspeciales || [];
-
-const { data: serviciosDB } = await supabase.from('servicios').select('*').eq('negocio_id', MI_NEGOCIO).order('precio', { ascending: true });
-const listaServicios = serviciosDB || [];
+const listaTurnos = datos.turnos;
+const listaDias = datos.dias_especiales.filter(d => d.fecha >= hoy);
+const listaServicios = datos.servicios;
 ---
 
 <Layout title="Admin | Barbería Ezequiel Marin">
