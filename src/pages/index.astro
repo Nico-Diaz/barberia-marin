@@ -1,7 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import BookingSection from '../components/BookingSection.astro';
-import { supabase } from '../lib/supabase';
+import { obtenerDatos, insertar, SheetsError } from '../lib/sheets';
 import { Resend } from 'resend';
 
 let mensajeError = "";
@@ -19,14 +19,16 @@ if (Astro.request.method === 'POST') {
   const diaSemana = new Date(fecha + 'T00:00:00').getDay();
 
   try {
-    // 1. VALIDAR SERVICIO
-    const { data: servicioEncontrado, error: errorServicio } = await supabase
-        .from('servicios')
-        .select('*')
-        .eq('id', servicioId)
-        .single();
+    // Leemos servicios, días especiales y turnos de la hoja en una sola llamada
+    const datos = await obtenerDatos().catch((e) => {
+        console.error('Error leyendo Google Sheets:', e);
+        throw { message: "No pudimos consultar la agenda. Probá de nuevo en unos minutos." };
+    });
 
-    if (errorServicio || !servicioEncontrado) {
+    // 1. VALIDAR SERVICIO
+    const servicioEncontrado = datos.servicios.find(s => s.id === servicioId);
+
+    if (!servicioEncontrado) {
         throw { message: "Por favor, seleccione un servicio válido." };
     }
     const nombreServicio = servicioEncontrado.nombre;
@@ -60,18 +62,13 @@ if (Astro.request.method === 'POST') {
     let esHorarioValido = false;
     let inicioStr = ""; let finStr = ""; let mensajeRango = "";
 
-    const { data: reglaDia, error: reglaDiaError } = await supabase.from('dias_especiales')
-        .select('*')
-        .eq('fecha', fecha)
-        .maybeSingle();
-
-    if (reglaDiaError) throw { message: "Error al consultar horarios especiales." };
+    const reglaDia = datos.dias_especiales.find(d => d.fecha === fecha);
 
     if (reglaDia) {
         if (reglaDia.cerrado) mensajeError = "Lo sentimos, este día la barbería permanecerá cerrada.";
         else { 
-            inicioStr = reglaDia.hora_inicio; 
-            finStr = reglaDia.hora_fin; 
+            inicioStr = reglaDia.hora_inicio || "";
+            finStr = reglaDia.hora_fin || "";
             mensajeRango = `Horario especial: ${inicioStr} a ${finStr}hs.`; 
         }
     } else {
@@ -86,21 +83,25 @@ if (Astro.request.method === 'POST') {
 
     if (esHorarioValido && !mensajeError) {
         // 4. CHEQUEAR DUPLICADOS
-        const { data: turnosExistentes } = await supabase.from('turnos').select('*').eq('fecha', fecha).eq('hora', hora);
-        if (turnosExistentes && turnosExistentes.length > 0) throw { message: `El horario de las ${hora} ya está ocupado.` };
+        const ocupado = { message: `El horario de las ${hora} ya está ocupado.` };
+        if (datos.turnos.some(t => t.fecha === fecha && t.hora === hora)) throw ocupado;
 
-        // 5. GUARDAR TURNO
-        const { error: errorInsert } = await supabase.from('turnos').insert([{ 
-            negocio_id: import.meta.env.PUBLIC_NEGOCIO_ID,
+        // 5. GUARDAR TURNO (la hoja vuelve a chequear fecha+hora con bloqueo, por si dos reservan a la vez)
+        await insertar('turnos', {
+            negocio_id: import.meta.env.PUBLIC_NEGOCIO_ID ?? '',
             cliente_nombre: nombre,      // Cambió el nombre de la columna
             cliente_apellido: apellido,  // Cambió el nombre de la columna
             cliente_telefono: telefono,  // Cambió el nombre de la columna
             fecha: fecha,
             hora: hora,
             servicio: nombreServicio,
-            profesional: 'Ezequiel'      // ESTO ES NUEVO Y OBLIGATORIO (NOT NULL)
-        }]);
-        if (errorInsert) throw errorInsert;
+            profesional: 'Ezequiel',
+            estado: 'pendiente'
+        }, { unico: ['fecha', 'hora'] }).catch((e) => {
+            if (e instanceof SheetsError && e.code === 'DUPLICADO') throw ocupado;
+            console.error('Error guardando turno en Google Sheets:', e);
+            throw { message: "No pudimos guardar el turno. Probá de nuevo." };
+        });
 
         // 6. ENVIAR EMAIL (Resend)
         console.log('Intentando enviar email con Resend');

@@ -1,46 +1,28 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { supabase } from '../lib/supabase';
+import { credencialesValidas, iniciarSesion, sesionValida } from '../lib/auth';
+
+export const prerender = false;
 
 let errorMsg = "";
+
+// Si ya hay sesión, directo al panel
+if (Astro.request.method === 'GET' && sesionValida(Astro.cookies)) return Astro.redirect('/admin');
 
 // LÓGICA DE LOGIN
 if (Astro.request.method === 'POST') {
     const formData = await Astro.request.formData();
-    const email = formData.get('email') as string;
-    const password = formData.get('password') as string;
+    const email = (formData.get('email') as string) || '';
+    const password = (formData.get('password') as string) || '';
 
-    // 1. Preguntamos a Supabase si el usuario es real
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-    });
-
-    if (error) {
+    // 1. Comparamos con ADMIN_EMAIL / ADMIN_PASSWORD (variables de entorno)
+    if (!credencialesValidas(email, password)) {
         errorMsg = "Email o contraseña incorrectos.";
     } else {
-        // 2. ÉXITO: Supabase nos da tokens (access_token y refresh_token)
-        const { access_token, refresh_token } = data.session;
+        // 2. ÉXITO: guardamos una cookie de sesión firmada (HttpOnly, 1 semana)
+        iniciarSesion(Astro.cookies);
 
-        // 3. Guardamos esos tokens en cookies seguras (HttpOnly)
-        // Esto es lo que "autoriza" al usuario en las siguientes páginas
-        Astro.cookies.set("sb-access-token", access_token, {
-            path: "/",
-            httpOnly: true, // No accesible por JS (seguridad)
-            secure: true,   // Solo HTTPS
-            sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 7 // 1 semana
-        });
-
-        Astro.cookies.set("sb-refresh-token", refresh_token, {
-            path: "/",
-            httpOnly: true,
-            secure: true,
-            sameSite: "lax",
-            maxAge: 60 * 60 * 24 * 7
-        });
-
-        // 4. Redirigimos al panel
+        // 3. Redirigimos al panel
         return Astro.redirect("/admin");
     }
 }
